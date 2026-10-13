@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "warehouse-preview",
+      "displayName": "Example warehouse (not checked)",
+      "provider": "postgres",
+      "host": "localhost",
+      "port": 5432,
+      "database": "analytics"
+    }
+  ],
+  "bindings": [
+    {
+      "module": "single.pietto",
+      "source": "users",
+      "profile": "warehouse-preview",
+      "tables": [
+        { "declaration": "users", "schema": "public", "table": "users" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "Shape": {
+    "prefix": "shape",
+    "body": ["shape ${1:Record}:", "    ${2:id}: ${3:Int} not null", "    ${4:name}: Text nullable", "$0"],
+    "description": "Declare ordered, typed fields."
+  },
+  "Source": {
+    "prefix": "source",
+    "body": ["source ${1:records}: ${2:Record} is postgres.table(\"${3:public.records}\")", "$0"],
+    "description": "Declare a PostgreSQL source association without opening a connection."
+  },
+  "Query": {
+    "prefix": "query",
+    "body": ["query ${1:result}:", "    from ${2:records}", "    select:", "        ${3:id}", "$0"],
+    "description": "Declare a query over an existing source or relation."
+  },
+  "Table": {
+    "prefix": "table",
+    "body": ["table ${1:result}:", "    from ${2:records}", "    select:", "        ${3:id}", "$0"],
+    "description": "Declare a table model over an existing source or relation."
+  },
+  "Type": {
+    "prefix": "type",
+    "body": ["type ${1:Identifier} = ${2:Int} not null", "$0"],
+    "description": "Declare a type alias with explicit nullability."
+  },
+  "Project import": {
+    "prefix": "import",
+    "body": ["import \"${1:./models.pietto}\":", "    ${2|shape,source,table,query,type,enum|} ${3:Record}", "$0"],
+    "description": "Import an explicit declaration in a selected Pietto project."
+  }
+}

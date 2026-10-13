@@ -1,0 +1,7 @@
+import "models/users.pietto":
+    shape User
+    source users as people
+
+export:
+    shape User
+    source people

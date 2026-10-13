@@ -1,0 +1,12 @@
+mode checked
+
+shape User:
+    id: Int not null
+    email: Text nullable
+    active: Bool not null
+
+source users: User is postgres.table("public.users")
+
+export:
+    shape User
+    source users

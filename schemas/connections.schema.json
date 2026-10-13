@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pietto-vscode.local/schemas/connections-v1.json",
+  "title": "Pietto Connections Preview",
+  "description": "Extension-owned preview descriptors only. No credentials, URIs, executable configuration, environment interpolation, connectivity checks, or core pietto.toml semantics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "profiles", "bindings"],
+  "properties": {
+    "version": { "const": 1 },
+    "profiles": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/definitions/profile" }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/definitions/binding" }
+    }
+  },
+  "definitions": {
+    "descriptor": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[^\\u0000-\\u001f\\u007f]*$",
+      "not": {
+        "anyOf": [
+          { "pattern": "([a-zA-Z][a-zA-Z0-9+.-]*://|\\S+:[^\\s@]+@|\\$\\{|\\$[A-Za-z_]|%[A-Za-z_][A-Za-z0-9_]*%|\\{\\{|-----[Bb][Ee][Gg][Ii][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\\s*[:=]|[Tt][Oo][Kk][Ee][Nn]\\s*[:=]|[Ss][Ee][Cc][Rr][Ee][Tt]\\s*[:=])" },
+          { "pattern": "(?:\\b(?:Bearer|Basic)\\s+\\S{8,}|\\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})|(?:^|\\s)eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)" }
+        ]
+      }
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,63}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "provider"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "displayName": {
+          "allOf": [{ "$ref": "#/definitions/descriptor" }, { "maxLength": 120 }],
+          "description": "A non-secret display label."
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "description": "Explicit provider descriptor. This field does not select or load a driver."
+        },
+        "host": {
+          "allOf": [{ "$ref": "#/definitions/descriptor" }, {
+            "maxLength": 253,
+            "pattern": "^(?:[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?|\\[?[0-9A-Fa-f:]+\\]?)$"
+          }],
+          "description": "Host name or IP literal only. No URI or userinfo."
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "database": {
+          "allOf": [{ "$ref": "#/definitions/descriptor" }, { "maxLength": 128, "pattern": "^[A-Za-z0-9_][A-Za-z0-9_. -]*$" }],
+          "description": "Non-secret database name, not a connection URI or filesystem path."
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "source", "profile"],
+      "properties": {
+        "module": {
+          "allOf": [{ "$ref": "#/definitions/descriptor" }, {
+            "maxLength": 1024,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*//)[^\\\\:\\u0000-\\u001f\\u007f]+\\.pietto$"
+          }],
+          "description": "Exact workspace-relative module path using forward slashes. Binding identity includes the workspace folder URI."
+        },
+        "source": { "$ref": "#/definitions/identifier" },
+        "profile": { "$ref": "#/definitions/id" },
+        "tables": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["declaration", "table"],
+            "properties": {
+              "declaration": { "$ref": "#/definitions/identifier" },
+              "schema": { "$ref": "#/definitions/identifier" },
+              "table": { "$ref": "#/definitions/identifier" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

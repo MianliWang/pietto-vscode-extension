@@ -1,0 +1,32 @@
+mode checked
+
+shape AccountRow:
+    id: Int not null
+    label: Text nullable
+    unique account_key on id
+
+shape EventRow:
+    id: Int not null
+    account_id: Int not null
+    metric: Int nullable
+    unique event_key on id
+
+source accounts: AccountRow is postgres.table("public.accounts")
+source events: EventRow is postgres.table("public.events")
+
+query joined:
+    from accounts
+    left join events as event:
+        from accounts
+        on accounts.id == event.account_id
+    let:
+        key = event.account_id
+    select:
+        account_id = accounts.id
+        event_id = event.id
+        bound_key = key
+        ranked = row_number() window:
+            order by:
+                event.id
+    qualify:
+        ranked <= 3

@@ -1,0 +1,16 @@
+mode checked
+
+import "models/facade.pietto":
+    source people
+
+shape User:
+    local_only: Text not null
+
+query emails:
+    from people
+    select:
+        id
+        email
+
+export:
+    query emails
