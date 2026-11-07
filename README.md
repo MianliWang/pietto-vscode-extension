@@ -1,3 +1,5 @@
+![Pietto: a query language for analytical thinking](images/pietto-readme-banner.png)
+
 # Pietto for VS Code
 
 Highlighting, snippets and folding for `.pietto` files, and Problems
@@ -27,9 +29,10 @@ py -3.12 -m venv $HOME\.venvs\pietto
 
 ## Install the extension
 
-The extension is not on the Marketplace. Build the VSIX (see
+Install **Pietto** (`MianliWang.pietto-vscode-extension`) from the Visual
+Studio Marketplace. To run a local build instead, build the VSIX (see
 [Develop and verify](#develop-and-verify)) and install
-`artifacts/pietto-vscode-extension-0.2.0.vsix` with **Extensions: Install from
+`artifacts/pietto-vscode-extension-0.2.1.vsix` with **Extensions: Install from
 VSIX…**.
 
 ## Select the interpreter
@@ -155,20 +158,27 @@ letter, written relative to the workspace folder or as `C:\work\project`, and
 WSL must mount the drives at its default `/mnt`. Browser-only VS Code is not
 supported.
 
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md) for what each version changed.
+
 ## Removed in 0.2.0
 
-Version 0.1.0 had hover, completion, go to definition, an outline, the **Pietto
-Models** and **Pietto Connections** views, a connection preview
+Versions 0.1.0 and 0.1.1 had hover, completion, go to definition, an outline,
+the **Pietto Models** and **Pietto Connections** views, a connection preview
 (`pietto-connections.json` and its JSON Schema), the commands **Refresh Models
 and Connections**, **Configure Connection Preview**, **Reveal Current
 Declaration** and **Copy Qualified Field Path**, and the settings
 `pietto.analysisDelay` and `pietto.analysisTimeout`. They ran on a Python
-adapter that imported private Pietto modules and accepted only pietto 0.1.2,
-by a fingerprint of its source, so any later Pietto broke them. Diagnostics now
-come from `pietto lsp`, a public Pietto contract. The removed features come back
-when Pietto has public contracts for them. Project roots now live in the
-`pietto.projectRoots` setting; the roots that 0.1.0 kept in workspace state are
-not carried over, so run **Pietto: Select Explicit Project Root** again.
+adapter that imported private Pietto modules. Version 0.1.0 accepted only
+pietto 0.1.2, by a fingerprint of its source; 0.1.1 was tested with pietto
+0.1.2 and 0.1.3 and tried any other pietto without a guarantee, so a change to
+those private modules could break them. Diagnostics now come from
+`pietto lsp`, a public Pietto contract. The removed features come back when
+Pietto has public contracts for them. Project roots now live in the
+`pietto.projectRoots` setting; the roots that 0.1.0 and 0.1.1 kept in
+workspace state are not carried over, so run **Pietto: Select Explicit Project
+Root** again.
 
 ## Develop and verify
 
@@ -193,7 +203,7 @@ semantic catalogs) and tokenize `tests/fixtures/corpus.json` (every `pietto`
 code block of Pietto's README and language, style and worked-example docs,
 and every Pietto example, with the keyword roles, strings, numbers and
 comments that Pietto's own parser found). Every snippet, expanded in the
-smallest file or two-module project that uses it, must pass `pietto check`
+smallest file or project that uses it, must pass `pietto check`
 with no diagnostic and `pietto fmt --check`; that test runs the
 `PIETTO_TEST_PYTHON` interpreter without `-I`, so
 `PYTHONPATH=<pietto tree>/src` can choose a source tree. Like the host tests,
@@ -217,7 +227,7 @@ The host tests download VS Code stable once into `.vscode-test/` (or use
 the extension against the real `pietto lsp`; on Linux they need a display
 (`DISPLAY`, WSLg or `xvfb-run`). Their process checks read `/proc`, so on
 other systems they print a `SKIP` line instead. `npm run package` writes
-`artifacts/pietto-vscode-extension-0.2.0.vsix`, and `npm run test:vsix` installs it into an
+`artifacts/pietto-vscode-extension-0.2.1.vsix`, and `npm run test:vsix` installs it into an
 isolated profile and runs the host tests against it. Press F5 for an isolated
 development host. See [verification](docs/verification.md) and
 [architecture](docs/architecture.md).

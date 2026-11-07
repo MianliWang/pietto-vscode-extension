@@ -2,9 +2,26 @@
   "name": "pietto-vscode-extension",
   "displayName": "Pietto",
   "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "MianliWang",
   "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0B2A6B",
+    "theme": "dark"
+  },
+  "keywords": [
+    "pietto",
+    "sql",
+    "postgresql",
+    "mysql",
+    "lsp",
+    "query language"
+  ],
+  "homepage": "https://github.com/MianliWang/pietto",
+  "bugs": {
+    "url": "https://github.com/MianliWang/pietto-vscode-extension/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/MianliWang/pietto-vscode-extension.git"
@@ -43,7 +60,11 @@
         "extensions": [
           ".pietto"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/pietto-file-light.svg",
+          "dark": "./images/pietto-file-dark.svg"
+        }
       }
     ],
     "grammars": [

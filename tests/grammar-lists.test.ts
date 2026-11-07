@@ -48,6 +48,8 @@ test('builtin types and functions equal the Pietto catalog snapshot', () => {
   assert.deepEqual(words(scope => scope.startsWith('support.function.builtin.aggregate.')), language.aggregates);
   assert.deepEqual(words(scope => scope.startsWith('support.function.builtin.window.')), language.windowFunctions);
   assert.deepEqual(words(scope => scope === 'support.function.builtin.pietto'), language.functions);
+  // The one built-in call outside the catalogs: `let o = unnest(p.field)`, an Unnest let.
+  assert.deepEqual(words(scope => scope === 'support.function.builtin.relation.pietto'), ['unnest']);
 });
 
 test('keyword scopes cover exactly the Pietto.g4 keywords, retired header words excluded', () => {

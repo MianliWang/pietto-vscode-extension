@@ -1,6 +1,6 @@
 # Verification
 
-Local runs of version 0.2.0 on 2026-11-07 (UTC). They are not CI and not a
+Local runs of version 0.2.1 on 2026-11-07 (UTC). They are not CI and not a
 Marketplace publication. Reproduce with the commands in
 [Develop and verify](../README.md#develop-and-verify).
 
@@ -45,17 +45,17 @@ Marketplace publication. Reproduce with the commands in
 | `npm ci --ignore-scripts --offline` | PASS |
 | `npm run build` (TypeScript) | PASS |
 | `npm run lint` (ESLint) | PASS |
-| `npm test`: TextMate grammar word lists against the fixture snapshot, the corpus (keyword and name scopes, whole strings, numbers and comments), focused grammar cases, language configuration, the snippets (each of the 15 expanded in its smallest file or two-module project passes `pietto check` with no diagnostic and `pietto fmt --check`), launch arguments, the probe's failure messages, list settings, root resolution, WSL path mapping, the server script run by the real interpreter | 23/23 PASS, none skipped; with no interpreter (`PIETTO_TEST_PYTHON` unset or missing, no `.local/pietto-venv`) the snippet and server-script tests fail instead of skipping |
+| `npm test`: TextMate grammar word lists against the fixture snapshot, the corpus (keyword and name scopes, whole strings, numbers and comments), focused grammar cases, language configuration, the snippets (each of the 26 expanded in its smallest file or project passes `pietto check` with no diagnostic and `pietto fmt --check`), launch arguments, the probe's failure messages, list settings, root resolution, WSL path mapping, the server script run by the real interpreter | 24/24 PASS, none skipped; with no interpreter (`PIETTO_TEST_PYTHON` unset or missing, no `.local/pietto-venv`) the snippet and server-script tests fail instead of skipping |
 | `npm run test:host`: the acceptance below, against the source tree | 11/11 PASS |
 | `npm run test:restricted`: real Restricted Mode, Workspace Trust enabled | PASS |
-| `npm run package` with `SOURCE_DATE_EPOCH=1791876535` | PASS; `artifacts/pietto-vscode-extension-0.2.0.vsix`, 489,858 bytes, SHA-256 `8bf082faed0232eb207c46ea20260d625e6096b7509b97abd54b5c8f04def1d2`, the same on a second build |
+| `npm run package` with `SOURCE_DATE_EPOCH=1791876535` | PASS; `artifacts/pietto-vscode-extension-0.2.1.vsix`, 520,013 bytes, SHA-256 `9c9c286de895552d9e3b5b519cac9c31da0f82e3cf09d74ce1862f59a16918eb`, the same on a second build |
 | `npm run test:vsix`: the VSIX installed into an isolated profile, then the same acceptance against the installed copy | 11/11 PASS |
 | `pietto lsp` processes left after all runs | none |
 
 The VSIX holds `out/src`, the grammar, snippets, language configuration,
-examples, README, LICENSE (byte-identical to the repository's) and the
-production `node_modules` only; `vsce` warns that the extension is not
-bundled.
+examples, the four images that `package.json` and the README name, README,
+CHANGELOG, LICENSE (byte-identical to the repository's) and the production
+`node_modules` only; `vsce` warns that the extension is not bundled.
 
 ## Acceptance
 
@@ -108,9 +108,11 @@ Restricted Mode: the workspace is untrusted, the user interpreter is the real
 one and the workspace names a fake one with `pietto.projectRoots: ["."]`. After
 opening a file with an error and running `Pietto: Restart Language Server`,
 five seconds pass with no client, no `pietto lsp` process, no diagnostics and
-no message; the workspace interpreter is ignored; the snippets (`count`,
-`def`, `enum`, `export`, `first`, `import`, `join`, `last`, `query` three
-times, `relationship`, `shape`, `source`, `sum`, `unique`) are offered, and
+no message; the workspace interpreter is ignored; the snippets (`all`,
+`any`, `asof`, `collect`, `constant`, `count`, `count_distinct`, `def`,
+`enum`, `export`, `first`, `import`, `join` twice, `last`, `median`,
+`quantile`, `query` five times, `relationship`, `shape`, `source`, `sum`,
+`unique`, `unnest`, `variance`) are offered, and
 indented blocks fold without their trailing blank lines (VS Code's indentation
 folding with `folding.offSide`; folds 0–1, 3–6 and 5–6 of the test file).
 
@@ -119,7 +121,8 @@ folding with `folding.offSide`; folds 0–1, 3–6 and 5–6 of the test file).
 - Windows: native Windows Python, the Windows desktop with the `wsl.exe`
   launcher (its path mapping has unit tests only), and a Remote WSL session.
 - macOS, and VS Code 1.90.0, the oldest version `engines.vscode` admits.
-- Pixel inspection of highlighting; the grammar is checked by the TextMate
-  tests.
+- Pixel inspection of highlighting and of the icons; the grammar is checked
+  by the TextMate tests, and the icons by the VSIX manifest and the VS Code
+  logs of the VSIX run.
 - The open-under-two-URIs, letter-case and partial-change editor messages, and
   the Not checked message; the host tests cover the two-roots message.

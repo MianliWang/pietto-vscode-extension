@@ -65,6 +65,10 @@
       "match": "\\b(?:cume_dist|dense_rank|first_value|lag|last_value|lead|nth_value|ntile|percent_rank|rank|row_number)(?=[ \\t]*\\()",
       "name": "support.function.builtin.window.pietto"
     },
+    "builtin-relation-function": {
+      "match": "\\bunnest(?=[ \\t]*\\()",
+      "name": "support.function.builtin.relation.pietto"
+    },
     "type-name": {"patterns": [{"include": "#builtin-type"}, {"match": "[A-Za-z_][A-Za-z_0-9]*", "name": "entity.name.type.pietto"}]},
     "type-suffix": {
       "patterns": [
@@ -454,6 +458,7 @@
         {"include": "#builtin-function"},
         {"include": "#builtin-aggregate"},
         {"include": "#builtin-window-function"},
+        {"include": "#builtin-relation-function"},
         {"match": "\\b[A-Za-z_][A-Za-z_0-9]*(?=[ \\t]*\\()", "name": "entity.name.function.pietto"},
         {"match": "\\bself\\b", "name": "variable.language.self.pietto"},
         {"match": "\\b[A-Za-z_][A-Za-z_0-9]*\\b"},

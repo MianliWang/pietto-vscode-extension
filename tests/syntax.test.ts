@@ -126,6 +126,24 @@ test('clause, join, window and frame words are keywords where the grammar reads 
   assert.ok(!isKeyword(await scopesIn(query, 15, 'group')), 'group after in is the group, a name');
 });
 
+test('unnest( is a built-in call; a member call or a name spelled unnest is not', async () => {
+  const query = [
+    'query expanded:',
+    '    from customers_with_orders',
+    '    let o = unnest(customers_with_orders.recent_orders)',
+    '    let p = unnest (customers_with_orders.recent_orders)',
+    '    cross join o',
+    '    select unnest, m = o.unnest(1)',
+  ].join('\n');
+  for (const line of [2, 3]) {
+    const scopes = await scopesIn(query, line, 'unnest');
+    assert.ok(scopes.includes('support.function.builtin.relation.pietto'), `line ${line}: ${scopes.join(' ')}`);
+  }
+  assert.ok((await scopesIn(query, 2, 'o')).includes('variable.other.pietto'));
+  assert.ok(!(await scopesIn(query, 5, 'unnest')).some(scope => scope.startsWith('support.')), 'a name spelled unnest');
+  assert.ok((await scopesIn(query, 5, 'unnest', 1)).includes('entity.name.function.pietto'), 'a member call');
+});
+
 // The frame forms docs/language.md lists (in a ```text fence the corpus does not read).
 const FRAMES = [
   'rows 2 preceding',
@@ -198,7 +216,7 @@ test('frame and field-constraint words used as names get no keyword scope', asyn
 
 test('a name that only contains a keyword or built-in name is never scoped as one', async () => {
   const language = JSON.parse(readFileSync('tests/fixtures/language.json', 'utf8')) as Record<string, string[]>;
-  const words = new Set([...language.keywords, ...language.types, ...language.functions, ...language.aggregates, ...language.windowFunctions, 'self', 'cast']);
+  const words = new Set([...language.keywords, ...language.types, ...language.functions, ...language.aggregates, ...language.windowFunctions, 'self', 'cast', 'unnest']);
   const wrong = (scope: string) => KEYWORD_SCOPE.test(scope) || /^(?:support|variable\.language|constant\.numeric)\./.test(scope);
   const grammar = await loadGrammar();
   for (const word of words) {

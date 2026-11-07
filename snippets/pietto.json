@@ -18,6 +18,11 @@
     "body": ["enum ${1:Status}: ${2:pending}, ${3:paid}$0"],
     "description": "Declare an enum with its labels on one line."
   },
+  "Constant": {
+    "prefix": "constant",
+    "body": ["${1:cutoff}: ${2:Date} = ${3:\"2024-01-31\"}$0"],
+    "description": "Declare a top-level constant of a single file: a name, its type and one literal of it."
+  },
   "Source": {
     "prefix": "source",
     "body": ["source ${1:orders}: ${2:Order} = postgres.table(\"${3:shop.orders}\")$0"],
@@ -54,6 +59,16 @@
     ],
     "description": "Declare a query that names another input with let, joins it and writes the match in on."
   },
+  "Query parameter": {
+    "prefix": "query",
+    "body": [
+      "query ${1:large_orders}(${2:min_cents}: ${3:Int}):",
+      "    from ${4:orders}",
+      "    where ${5:amount_cents} >= ${2}",
+      "    select ${6:id}$0"
+    ],
+    "description": "Declare a query with a typed parameter, in an explicit-module project (schema_version = 2)."
+  },
   "Join": {
     "prefix": "join",
     "body": [
@@ -61,6 +76,37 @@
       "${3|left,inner|} join ${1} on ${4:orders}.${5:customer_id} == ${1}.${6:id}$0"
     ],
     "description": "Name another input with let, then join it and write the match in on."
+  },
+  "Asof join": {
+    "prefix": ["asof", "join"],
+    "body": [
+      "let ${1:price} = ${2:prices}",
+      "asof ${3|left,inner|} join ${1} on ${4:orders}.${5:product_id} == ${1}.${6:product_id} and ${4}.${7:ordered_at} >= ${1}.${8:valid_from}$0"
+    ],
+    "description": "Name another input with let, then join its latest row at or before each row's time: the keys first, one >= time test last."
+  },
+  "Collect query": {
+    "prefix": ["query", "collect"],
+    "body": [
+      "query ${1:customer_orders}:",
+      "    let ${2:order_rows}:",
+      "        capture ${3:customers}",
+      "        from ${4:orders}",
+      "        where ${4}.${5:customer_id} == ${3}.${6:id}",
+      "        select ${7:id}, ${8:amount_cents}",
+      "        order by ${7}",
+      "    from ${3}",
+      "    select ${6}, ${9:name}, ${10:order_list} = collect ${2}$0"
+    ],
+    "description": "Collect each row's matching rows of a relation let, which ends in order by, into one nested field, in an explicit-module project (schema_version = 2)."
+  },
+  "Unnest": {
+    "prefix": "unnest",
+    "body": [
+      "let ${1:o} = unnest(${2:customer_orders}.${3:order_list})",
+      "cross join ${1}$0"
+    ],
+    "description": "Expand the nested field of the from input into one row per element, in an explicit-module project (schema_version = 2)."
   },
   "Count matching rows": {
     "prefix": ["sum", "count"],
@@ -76,6 +122,36 @@
     "prefix": "last",
     "body": ["last(${1:plant}, order by ${2:sold_at}, ${3:id})$0"],
     "description": "The value at the last row of each group; the order ends in a unique key of the source."
+  },
+  "Median": {
+    "prefix": "median",
+    "body": ["median(${1:amount_cents})$0"],
+    "description": "The interpolated median of an Int or Float field of each group, a Float that is None for no values."
+  },
+  "Quantile": {
+    "prefix": "quantile",
+    "body": ["quantile(${1:amount_cents}, ${2:0.9})$0"],
+    "description": "The interpolated quantile of an Int or Float field of each group; q is a Float literal from 0.0 to 1.0."
+  },
+  "Variance": {
+    "prefix": "variance",
+    "body": ["variance(${1:amount_cents})$0"],
+    "description": "The sample variance of an Int or Float field of each group; pvariance is the population variance."
+  },
+  "Distinct combinations": {
+    "prefix": "count_distinct",
+    "body": ["count_distinct(${1:plant}, ${2:pot})$0"],
+    "description": "The number of distinct combinations of several fields in each group; a row where one of them is None is not counted."
+  },
+  "Any row": {
+    "prefix": "any",
+    "body": ["any(${1:o}.${2:paid} for ${1} in group)$0"],
+    "description": "True when the test holds for at least one row of each group, in a select item of a grouped query."
+  },
+  "All rows": {
+    "prefix": "all",
+    "body": ["all(${1:o}.${2:paid} for ${1} in group)$0"],
+    "description": "True when the test holds for every row of each group, in a select item of a grouped query."
   },
   "Def": {
     "prefix": "def",

@@ -25,7 +25,9 @@ functions of Pietto's semantic catalogs) and `tests/fixtures/corpus.json` (the
 `pietto` code blocks of Pietto's docs and its examples, with the keyword roles
 and literal spans from Pietto's own lexer and parser). The tests hold the
 grammar's word lists equal to that snapshot and every corpus keyword, name,
-string, number and comment to its scope. The snippets use the canonical forms
+string, number and comment to its scope. One built-in call is outside the
+catalogs and has its own rule: `unnest(`, as in an Unnest let
+`let o = unnest(p.field)`. The snippets use the canonical forms
 of Pietto's `docs/style.md`; each must pass `pietto check` and
 `pietto fmt --check` (run with `PIETTO_TEST_PYTHON`).
 
@@ -103,6 +105,6 @@ Highlighting, snippets and folding work.
 
 No hover, completion, definition, outline, formatter, SQL, tree views,
 connection configuration, telemetry, source upload or automatic installation.
-The 0.1.0 adapter that provided hover, completion, definition, outline and the
-model and connection views imported private Pietto modules, so it was removed;
-those features return only on public Pietto contracts.
+The adapter of 0.1.0 and 0.1.1 that provided hover, completion, definition,
+outline and the model and connection views imported private Pietto modules, so
+it was removed; those features return only on public Pietto contracts.
