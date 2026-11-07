@@ -7,12 +7,14 @@ anything, runs queries, or connects to a database.
 
 ## Install Pietto
 
-`pietto lsp` first ships in **pietto 0.1.10**, which is not published yet. Use
-pietto 0.1.10 or later, in its own virtual environment:
+The extension needs `pietto lsp`, which first ships in **pietto 0.1.10**.
+Install pietto 0.1.10 or later from PyPI, in its own virtual environment of
+Python 3.12 or later:
 
 ```bash
 python3 -m venv ~/.venvs/pietto
 ~/.venvs/pietto/bin/python -m pip install "pietto>=0.1.10"
+~/.venvs/pietto/bin/pietto lsp --help    # prints "usage: pietto lsp"
 ```
 
 On Windows:
@@ -20,16 +22,7 @@ On Windows:
 ```powershell
 py -3.12 -m venv $HOME\.venvs\pietto
 ~\.venvs\pietto\Scripts\python.exe -m pip install "pietto>=0.1.10"
-```
-
-Until 0.1.10 is on PyPI, test with a wheel built from a Pietto checkout that
-has `pietto lsp`:
-
-```bash
-cd pietto
-uv build --wheel --out-dir /tmp/pietto-wheel
-~/.venvs/pietto/bin/python -m pip install /tmp/pietto-wheel/pietto-*-py3-none-any.whl
-~/.venvs/pietto/bin/pietto lsp --help    # prints "usage: pietto lsp"
+~\.venvs\pietto\Scripts\pietto.exe lsp --help    # prints "usage: pietto lsp"
 ```
 
 ## Install the extension

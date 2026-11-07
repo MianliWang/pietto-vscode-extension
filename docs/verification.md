@@ -17,26 +17,26 @@ Marketplace publication. Reproduce with the commands in
   9.0.1 with `vscode-languageserver-protocol` 3.17.5, `vscode-jsonrpc` 8.2.0,
   `vscode-languageserver-types` 3.17.5, `semver` 7.8.5, `minimatch` 5.1.9,
   `brace-expansion` 2.1.7, `balanced-match` 1.0.2.
-- Pietto: a wheel built offline (`uv build --wheel --offline`) from Pietto
-  `main` commit `ff1aa71389cacf6eb43ed5c94df53246f7f84eae` (tree
-  `db2fbbaadd2a6c8365c6ee40ecd6466a2a0613d6`, `git archive` of that commit),
-  which has `pietto lsp`; its CI run
-  [42333099891](https://github.com/MianliWang/pietto/actions/runs/42333099891)
-  passed. Its version string is still 0.1.9; the release that carries
-  `pietto lsp` is 0.1.10. Wheel `pietto-0.1.9-py3-none-any.whl`, SHA-256
-  `d3b0ef4a1cdb72e4932c17c1eb6423c65fb7a7c68e852d075febeaa2d6dfc618`,
-  installed with `antlr4-python3-runtime` 4.13.2 into a CPython 3.13.13
-  virtual environment, used as `PIETTO_TEST_PYTHON`.
-  The server reported `serverInfo` `pietto 0.1.9`.
+- Pietto 0.1.10 from PyPI, the first release with `pietto lsp` (tag
+  [v0.1.10](https://github.com/MianliWang/pietto/releases/tag/v0.1.10), commit
+  `8e7c43f1852b2c26318b3217268a1f7416f44965`, tree
+  `dceca22cc2ae0c1a5dabfb7d047d59d283912996`), installed with
+  `pip install --no-cache-dir pietto==0.1.10` into a CPython 3.13.13 virtual
+  environment, used as `PIETTO_TEST_PYTHON`. pip downloaded
+  `pietto-0.1.10-py3-none-any.whl`, SHA-256
+  `a0c371d22479cedf5ac2051010789211196b3e6bd8e25b8c5600e55d11945480`, and
+  `antlr4-python3-runtime` 4.13.2. `pietto lsp --help` exits 0, and the
+  server reported `serverInfo` `pietto 0.1.10`.
 - A pietto without `pietto lsp`: the released 0.1.9 wheel, SHA-256
   `d8b8567556482edd3cdfbb47c1213bcc4698f56cf0fbdb0c44b40d90e0004e2d`, in a
   second virtual environment (`PIETTO_TEST_OLD_PYTHON`).
 - Grammar fixtures: `tests/sync_language.py`, run with the
-  `PIETTO_TEST_PYTHON` interpreter, read the same extracted commit; the
-  fixtures record its tree id, `db2fbbaadd2a6c8365c6ee40ecd6466a2a0613d6`.
-  `tests/fixtures/corpus.json` holds 77 distinct Pietto code blocks (1,447
-  lines) with 1,110 keyword uses and 121 keyword-spelled names, as Pietto's
-  parser read them. A second run wrote the same bytes.
+  `PIETTO_TEST_PYTHON` interpreter, read a `git archive` of the release
+  commit; the fixtures record its tree id,
+  `dceca22cc2ae0c1a5dabfb7d047d59d283912996`. `tests/fixtures/corpus.json`
+  holds 77 distinct Pietto code blocks (1,447 lines) with 1,108 keyword uses
+  and 121 keyword-spelled names, as Pietto's parser read them. A second run
+  wrote the same bytes.
 
 ## Results
 
@@ -48,7 +48,7 @@ Marketplace publication. Reproduce with the commands in
 | `npm test`: TextMate grammar word lists against the fixture snapshot, the corpus (keyword and name scopes, whole strings, numbers and comments), focused grammar cases, language configuration, the snippets (each of the 15 expanded in its smallest file or two-module project passes `pietto check` with no diagnostic and `pietto fmt --check`), launch arguments, the probe's failure messages, list settings, root resolution, WSL path mapping, the server script run by the real interpreter | 23/23 PASS, none skipped; with no interpreter (`PIETTO_TEST_PYTHON` unset or missing, no `.local/pietto-venv`) the snippet and server-script tests fail instead of skipping |
 | `npm run test:host`: the acceptance below, against the source tree | 11/11 PASS |
 | `npm run test:restricted`: real Restricted Mode, Workspace Trust enabled | PASS |
-| `npm run package` with `SOURCE_DATE_EPOCH=1791876535` | PASS; `artifacts/pietto-vscode-extension-0.2.0.vsix`, 489,924 bytes, SHA-256 `da086ffbd42297575ff953374381f92292e73be132b741b07f0f802c878d4671`, the same on a second build |
+| `npm run package` with `SOURCE_DATE_EPOCH=1791876535` | PASS; `artifacts/pietto-vscode-extension-0.2.0.vsix`, 489,858 bytes, SHA-256 `8bf082faed0232eb207c46ea20260d625e6096b7509b97abd54b5c8f04def1d2`, the same on a second build |
 | `npm run test:vsix`: the VSIX installed into an isolated profile, then the same acceptance against the installed copy | 11/11 PASS |
 | `pietto lsp` processes left after all runs | none |
 
