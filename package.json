@@ -1,8 +1,8 @@
 {
   "name": "pietto-vscode-extension",
   "displayName": "Pietto",
-  "description": "Compiler-backed Pietto editing and declared model and connection preview.",
-  "version": "0.1.0",
+  "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server.",
+  "version": "0.2.0",
   "publisher": "MianliWang",
   "license": "MIT",
   "repository": {
@@ -20,14 +20,12 @@
   ],
   "main": "./out/src/extension.js",
   "activationEvents": [
-    "onLanguage:pietto",
-    "onView:pietto.models",
-    "onView:pietto.connections"
+    "onLanguage:pietto"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Syntax editing is available. Compiler analysis requires Workspace Trust.",
+      "description": "Highlighting, snippets and folding work. Diagnostics start pietto lsp from the selected Python and need Workspace Trust.",
       "restrictedConfigurations": [
         "pietto.pythonPath",
         "pietto.pythonArguments"
@@ -61,24 +59,7 @@
         "path": "./snippets/pietto.json"
       }
     ],
-    "views": {
-      "explorer": [
-        {
-          "id": "pietto.models",
-          "name": "Pietto Models"
-        },
-        {
-          "id": "pietto.connections",
-          "name": "Pietto Connections"
-        }
-      ]
-    },
     "commands": [
-      {
-        "command": "pietto.refresh",
-        "title": "Pietto: Refresh Models and Connections",
-        "icon": "$(refresh)"
-      },
       {
         "command": "pietto.selectPython",
         "title": "Pietto: Select Python Interpreter"
@@ -92,46 +73,10 @@
         "title": "Pietto: Use Single File Mode"
       },
       {
-        "command": "pietto.configureConnections",
-        "title": "Pietto: Configure Connection Preview",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "pietto.reveal",
-        "title": "Pietto: Reveal Current Declaration",
-        "icon": "$(target)"
-      },
-      {
-        "command": "pietto.copyFieldPath",
-        "title": "Pietto: Copy Qualified Field Path",
-        "icon": "$(copy)"
+        "command": "pietto.restart",
+        "title": "Pietto: Restart Language Server"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "pietto.refresh",
-          "when": "view == pietto.models || view == pietto.connections",
-          "group": "navigation"
-        },
-        {
-          "command": "pietto.reveal",
-          "when": "view == pietto.models",
-          "group": "navigation"
-        },
-        {
-          "command": "pietto.configureConnections",
-          "when": "view == pietto.connections",
-          "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "pietto.copyFieldPath",
-          "when": "view == pietto.models && viewItem == pietto.field"
-        }
-      ]
-    },
     "configuration": {
       "title": "Pietto",
       "properties": {
@@ -139,22 +84,7 @@
           "type": "string",
           "default": "python",
           "scope": "machine-overridable",
-          "description": "Python interpreter containing the compatible Pietto compiler. No automatic installation."
-        },
-        "pietto.analysisDelay": {
-          "type": "number",
-          "default": 250,
-          "minimum": 0,
-          "maximum": 2000,
-          "description": "Edit debounce in milliseconds."
-        },
-        "pietto.analysisTimeout": {
-          "type": "number",
-          "default": 15000,
-          "minimum": 1000,
-          "maximum": 60000,
-          "description": "Compiler request timeout in milliseconds.",
-          "scope": "resource"
+          "description": "Python interpreter that has pietto 0.1.10 or later installed; the extension runs its pietto lsp. Nothing is installed automatically."
         },
         "pietto.pythonArguments": {
           "type": "array",
@@ -163,29 +93,34 @@
           },
           "default": [],
           "scope": "machine-overridable",
-          "description": "Optional interpreter launcher arguments. Windows project checking: wsl.exe with -d, distribution, --, isolated Linux Python path."
+          "description": "Optional launcher arguments placed before the interpreter's own arguments. Windows desktop with a WSL interpreter: set pietto.pythonPath to wsl.exe and these to -d, the distribution, --, the Linux Python path."
+        },
+        "pietto.projectRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Explicit Pietto project roots (folders that hold pietto.toml), each the same as pietto check --project ROOT. Relative paths resolve against the workspace folder. Empty: every open file is checked as a single file."
         }
       }
-    },
-    "jsonValidation": [
-      {
-        "fileMatch": "pietto-connections.json",
-        "url": "./schemas/connections.schema.json"
-      }
-    ]
+    }
   },
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -watch -p .",
     "lint": "eslint src tests",
     "test": "npm run build && node --test out/tests/*.test.js",
-    "test:adapter": "node scripts/testAdapter.cjs",
     "test:host": "npm run build && node out/tests/runHost.js",
-    "verify": "npm run lint && npm test && npm run test:adapter && npm run test:host && npm run test:restricted",
-    "vscode:prepublish": "npm run build",
-    "package": "vsce package --no-dependencies --out artifacts/pietto-0.1.0.vsix",
     "test:restricted": "npm run build && node out/tests/runRestrictedHost.js",
-    "test:vsix": "npm run build && node out/tests/runVsix.js"
+    "test:vsix": "npm run build && node out/tests/runVsix.js",
+    "verify": "npm run lint && npm test && npm run test:host && npm run test:restricted",
+    "vscode:prepublish": "npm run build",
+    "package": "node -e \"require('node:fs').mkdirSync('artifacts', {recursive: true})\" && vsce package --out artifacts"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

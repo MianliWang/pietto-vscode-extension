@@ -1,32 +1,100 @@
 {
   "Shape": {
     "prefix": "shape",
-    "body": ["shape ${1:Record}:", "    ${2:id}: ${3:Int} not null", "    ${4:name}: Text nullable", "$0"],
-    "description": "Declare ordered, typed fields."
+    "body": [
+      "shape ${1:Order}:",
+      "    ${2:id}: ${3:Int}",
+      "    ${4:customer_id}: ${5:Int | None}$0"
+    ],
+    "description": "Declare a row shape: one typed field per line, with `| None` where the column may be NULL."
+  },
+  "Unique key": {
+    "prefix": "unique",
+    "body": ["unique(${1:id})$0"],
+    "description": "The fields of a unique key, after `name = ` on a line of a shape."
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": ["enum ${1:Status}: ${2:pending}, ${3:paid}$0"],
+    "description": "Declare an enum with its labels on one line."
   },
   "Source": {
     "prefix": "source",
-    "body": ["source ${1:records}: ${2:Record} is postgres.table(\"${3:public.records}\")", "$0"],
-    "description": "Declare a PostgreSQL source association without opening a connection."
+    "body": ["source ${1:orders}: ${2:Order} = postgres.table(\"${3:shop.orders}\")$0"],
+    "description": "Connect a shape to a database table."
   },
   "Query": {
     "prefix": "query",
-    "body": ["query ${1:result}:", "    from ${2:records}", "    select:", "        ${3:id}", "$0"],
-    "description": "Declare a query over an existing source or relation."
+    "body": [
+      "query ${1:paid_orders}:",
+      "    from ${2:orders}",
+      "    where ${3:amount_cents > 0}",
+      "    select ${4:id}$0"
+    ],
+    "description": "Declare a query: from, where, select."
   },
-  "Table": {
-    "prefix": "table",
-    "body": ["table ${1:result}:", "    from ${2:records}", "    select:", "        ${3:id}", "$0"],
-    "description": "Declare a table model over an existing source or relation."
+  "Grouped query": {
+    "prefix": "query",
+    "body": [
+      "query ${1:customer_totals}:",
+      "    from ${2:orders}",
+      "    group by ${3:customer_id}",
+      "    select ${3}, ${4:orders_count} = count()$0"
+    ],
+    "description": "Declare a query with one row per group."
   },
-  "Type": {
-    "prefix": "type",
-    "body": ["type ${1:Identifier} = ${2:Int} not null", "$0"],
-    "description": "Declare a type alias with explicit nullability."
+  "Join query": {
+    "prefix": "query",
+    "body": [
+      "query ${1:orders_with_customer}:",
+      "    from ${2:orders}",
+      "    let ${3:customer} = ${4:customers}",
+      "    ${5|left,inner|} join ${3} on ${2}.${6:customer_id} == ${3}.${7:id}",
+      "    select ${8:order_id} = ${2}.id, ${9:customer_name} = ${3}.${10:name}$0"
+    ],
+    "description": "Declare a query that names another input with let, joins it and writes the match in on."
   },
-  "Project import": {
+  "Join": {
+    "prefix": "join",
+    "body": [
+      "let ${1:customer} = ${2:customers}",
+      "${3|left,inner|} join ${1} on ${4:orders}.${5:customer_id} == ${1}.${6:id}$0"
+    ],
+    "description": "Name another input with let, then join it and write the match in on."
+  },
+  "Count matching rows": {
+    "prefix": ["sum", "count"],
+    "body": ["sum(1 for ${1:o} in group if ${1}.${2:paid})$0"],
+    "description": "Count the rows of each group whose test is True, in a select item of a grouped query."
+  },
+  "First value": {
+    "prefix": "first",
+    "body": ["first(${1:plant}, order by ${2:sold_at}, ${3:id})$0"],
+    "description": "The value at the first row of each group; the order ends in a unique key of the source."
+  },
+  "Last value": {
+    "prefix": "last",
+    "body": ["last(${1:plant}, order by ${2:sold_at}, ${3:id})$0"],
+    "description": "The value at the last row of each group; the order ends in a unique key of the source."
+  },
+  "Def": {
+    "prefix": "def",
+    "body": ["def ${1:line_total}(${2:price_cents}: ${3:Int}, ${4:quantity}: ${5:Int}) -> ${6:Int}: return ${2} * ${4}$0"],
+    "description": "Declare a pure inline function; each call is replaced by its body."
+  },
+  "Relationship": {
+    "prefix": "relationship",
+    "body": ["relationship ${1:order_customer}(${2:order}: ${3:Order}, ${4:customer}: ${5:Customer}): ${2}.${6:customer_id} == ${4}.${7:id}$0"],
+    "description": "Name a match between two shapes once and call it in on."
+  },
+  "Import": {
     "prefix": "import",
-    "body": ["import \"${1:./models.pietto}\":", "    ${2|shape,source,table,query,type,enum|} ${3:Record}", "$0"],
-    "description": "Import an explicit declaration in a selected Pietto project."
+    "body": ["from \"${1:models/a.pietto}\" import ${2|source,shape,query,def,relationship,type,enum|} ${3:orders}$0"],
+    "description": "Import a declaration of another module of an explicit-module project, with its kind."
+  },
+  "Export": {
+    "prefix": "export",
+    "body": ["export ${1|source,shape,query,def,relationship,type,enum|} ${2:orders}$0"],
+    "description": "Export a declaration of this module of an explicit-module project, with its kind."
   }
 }

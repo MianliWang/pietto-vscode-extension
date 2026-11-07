@@ -1,17 +1,14 @@
-mode checked
-
 shape User:
-    id: Int not null
-    email: Text nullable
-    active: Bool not null
-    order: Int nullable
+    id: Int
+    email: Text | None
+    active: Bool
+    order: Int | None
 
-source users: User is postgres.table("public.users")
+source users: User = postgres.table("public.users")
 
 query emails:
     from users
-    let:
-        normalized = lower(email)
+    let normalized = lower(email)
     where active
     select:
         id

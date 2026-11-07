@@ -1,11 +1,9 @@
-mode checked
-
 shape Metric:
-    id: Int not null
-    category: Text not null
-    amount: Int nullable
+    id: Int
+    category: Text
+    amount: Int | None
 
-source metrics: Metric is postgres.table("public.metrics")
+source metrics: Metric = postgres.table("public.metrics")
 
 query grouped:
     from metrics
@@ -14,16 +12,12 @@ query grouped:
     select:
         category
         total = sum(amount)
-        ranked = row_number() window:
-            order by:
-                total
+        ranked = row_number() window(order by total)
 
 query ranked:
     from metrics
     select:
         id
-        row_position = row_number() window:
-            order by:
-                id
+        row_position = row_number() window(order by id)
     order by:
         row_position

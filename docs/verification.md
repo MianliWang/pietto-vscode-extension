@@ -1,129 +1,125 @@
-# Local verification evidence
+# Verification
 
-Delivery reference: released PyPI `pietto==0.1.2`, source/tag
-`69192849bb2a4ace73c3f806031616a4c89b555b`; owner audit head
-`177c2e18906f22c3d42a9b0c9d65944d9af5a21d`. Results below are local execution,
-not CI or proof of Marketplace publication. Reproduce with `npm run verify`, then
-`npm run package` and `npm run test:vsix`.
+Local runs of version 0.2.0 on 2026-11-07 (UTC). They are not CI and not a
+Marketplace publication. Reproduce with the commands in
+[Develop and verify](../README.md#develop-and-verify).
 
-## Environment and exact package identity
+## Environment
 
-- Desktop Windows, VS Code `1.141.0`, commit
-  `2a59476c9bfcb90b3ddc372c36762471b7dfad1c`, x64. Executable:
-  `%LOCALAPPDATA%/Programs/Microsoft VS Code/Code.exe`.
-- Node `22.15.1`, npm `11.4.1`; locked dev dependencies in `package-lock.json`.
-- Native CPython `3.12.2`:
-  `<extension-checkout>/.local/release-venv/Scripts/python.exe`.
-  Package origin:
-  `<extension-checkout>/.local/release-venv/Lib/site-packages/pietto`.
-- WSL Ubuntu CPython `3.12.3`:
-  `<WSL-extension-checkout>/.local/release-venv-wsl/bin/python`.
-  Package origin:
-  `<WSL-extension-checkout>/.local/release-venv-wsl/lib/python3.12/site-packages/pietto`.
-  Placeholders describe the measured layout; ignored identity receipts retain
-  exact machine-local paths.
-- Both environments install the SHA-verified official PyPI 0.1.2 wheel and ANTLR
-  `4.13.2`. The dependency inventory has no DB drivers or PyArrow. Original
-  source-build environments and the core Python environment were preserved.
-- All 307 installed Python files match the release source build byte for byte;
-  consumed signatures and full adapter fingerprint agree across Windows/WSL:
-  `f3b882a3a6f1bd2dc5cdbce3aea112a5cf9876162b0157ddd359cb05159c83ee`.
-  See `artifacts/release-compatibility-comparison.json`, `release-*-identity.json`,
-  and `release-wheel-receipt.json` for read-backs and official wheel URLs/hashes.
+- Linux, WSL2 Ubuntu 24.04 (kernel 6.18.54.1-microsoft-standard-WSL2), display
+  through WSLg (`DISPLAY=:0`).
+- VS Code 1.145.2 for linux-x64 (commit
+  `c4453f8ea430795f941c1b2ff6c9321135a74a02`), downloaded once by
+  `@vscode/test-electron` into `.vscode-test/`, with its own user data and
+  extensions folders. No other VS Code installation or profile was used.
+- Node 22.23.1, npm 10.9.8, dependencies from `package-lock.json`
+  (`npm ci --ignore-scripts`). Runtime dependency `vscode-languageclient`
+  9.0.1 with `vscode-languageserver-protocol` 3.17.5, `vscode-jsonrpc` 8.2.0,
+  `vscode-languageserver-types` 3.17.5, `semver` 7.8.5, `minimatch` 5.1.9,
+  `brace-expansion` 2.1.7, `balanced-match` 1.0.2.
+- Pietto: a wheel built offline (`uv build --wheel --offline`) from Pietto
+  `main` commit `ff1aa71389cacf6eb43ed5c94df53246f7f84eae` (tree
+  `db2fbbaadd2a6c8365c6ee40ecd6466a2a0613d6`, `git archive` of that commit),
+  which has `pietto lsp`; its CI run
+  [42333099891](https://github.com/MianliWang/pietto/actions/runs/42333099891)
+  passed. Its version string is still 0.1.9; the release that carries
+  `pietto lsp` is 0.1.10. Wheel `pietto-0.1.9-py3-none-any.whl`, SHA-256
+  `d3b0ef4a1cdb72e4932c17c1eb6423c65fb7a7c68e852d075febeaa2d6dfc618`,
+  installed with `antlr4-python3-runtime` 4.13.2 into a CPython 3.13.13
+  virtual environment, used as `PIETTO_TEST_PYTHON`.
+  The server reported `serverInfo` `pietto 0.1.9`.
+- A pietto without `pietto lsp`: the released 0.1.9 wheel, SHA-256
+  `d8b8567556482edd3cdfbb47c1213bcc4698f56cf0fbdb0c44b40d90e0004e2d`, in a
+  second virtual environment (`PIETTO_TEST_OLD_PYTHON`).
+- Grammar fixtures: `tests/sync_language.py`, run with the
+  `PIETTO_TEST_PYTHON` interpreter, read the same extracted commit; the
+  fixtures record its tree id, `db2fbbaadd2a6c8365c6ee40ecd6466a2a0613d6`.
+  `tests/fixtures/corpus.json` holds 77 distinct Pietto code blocks (1,447
+  lines) with 1,110 keyword uses and 121 keyword-spelled names, as Pietto's
+  parser read them. A second run wrote the same bytes.
 
 ## Results
 
-| Check | Observed result |
+| Check | Result |
 | --- | --- |
-| TypeScript build and ESLint | PASS |
-| Real TextMate/Oniguruma, connection/configuration, protocol leaf validation | 11/11 PASS |
-| Real compiler adapter, native Python | 12 PASS; 10 project tests explicitly SKIP because the core trusted loader fails on native Windows |
-| Real compiler adapter, WSL Python | 22/22 PASS, including all 10 project tests |
-| Real desktop Extension Development Host | 15/15 stages PASS; `completed: true`, exit 0 |
-| Actual Restricted Mode in a separate trust-enabled host | PASS; `trusted: false`, 0 compiler requests, no compiler process |
-| Installed VSIX smoke | `npm run test:vsix` installs into an isolated profile and runs the same 15 host assertions; its actual receipt is `artifacts/vsix-host-results.json` |
-| GUI pixel inspection | NOTRUN: Computer Use native pipe returned `系统找不到指定的文件。 (os error 2)` after bounded retries and reinitialization |
-| Remote WSL VS Code GUI/session | NOTRUN; the Windows desktop WSL compiler bridge and Linux adapter were executed |
-| Browser-only VS Code | Unsupported |
-| Publication | Local tests do not establish publication. Git and Marketplace operational receipts are kept in ignored `artifacts/`; Open VSX and GitHub releases are outside scope. |
+| `npm ci --ignore-scripts --offline` | PASS |
+| `npm run build` (TypeScript) | PASS |
+| `npm run lint` (ESLint) | PASS |
+| `npm test`: TextMate grammar word lists against the fixture snapshot, the corpus (keyword and name scopes, whole strings, numbers and comments), focused grammar cases, language configuration, the snippets (each of the 15 expanded in its smallest file or two-module project passes `pietto check` with no diagnostic and `pietto fmt --check`), launch arguments, the probe's failure messages, list settings, root resolution, WSL path mapping, the server script run by the real interpreter | 23/23 PASS, none skipped; with no interpreter (`PIETTO_TEST_PYTHON` unset or missing, no `.local/pietto-venv`) the snippet and server-script tests fail instead of skipping |
+| `npm run test:host`: the acceptance below, against the source tree | 11/11 PASS |
+| `npm run test:restricted`: real Restricted Mode, Workspace Trust enabled | PASS |
+| `npm run package` with `SOURCE_DATE_EPOCH=1791876535` | PASS; `artifacts/pietto-vscode-extension-0.2.0.vsix`, 489,924 bytes, SHA-256 `da086ffbd42297575ff953374381f92292e73be132b741b07f0f802c878d4671`, the same on a second build |
+| `npm run test:vsix`: the VSIX installed into an isolated profile, then the same acceptance against the installed copy | 11/11 PASS |
+| `pietto lsp` processes left after all runs | none |
 
-Host stages demonstrate Problems clearing, real hover/type/nullability,
-completions and inserted qualified paths, declaration/field/import navigation,
-native outline and model/connection trees, unsaved imported edits with unchanged
-disk bytes, older-response rejection, BOM/CRLF/Unicode/UTF-16 selection,
-same-spelled multi-root models, authoritative include/exclude membership,
-independent folder failure, missing interpreter/recovery, actual malformed/crash/
-timeout workers, OS PID termination, untitled analysis without a project root,
-bounded metrics, and shared hover observations. Installed-package assertions
-read back `extension.extensionPath` to prevent accidentally testing source code.
+The VSIX holds `out/src`, the grammar, snippets, language configuration,
+examples, README, LICENSE (byte-identical to the repository's) and the
+production `node_modules` only; `vsce` warns that the extension is not
+bundled.
 
-Adapter fixtures separately verify aliases, ambiguous names without first-match
-navigation, hidden JOIN intermediates, pre-match JOIN ON types, LEFT JOIN null
-extension, LET prefixes, GROUP ORDER output scope, window inputs, relationship
-endpoint identities, metadata lineage, U+2028, parser recovery, compiler
-incompatibility, and source/configuration escape rejection. Preview tests trap
-TCP/DNS/fetch/process calls; real compiler tests trap sockets and confirm that
-DB drivers are not imported. None of these proves live connectivity; every
-connection state remains **not checked**.
+## Acceptance
 
-Latest commands, exit results and measurements are in ignored
-`artifacts/verification-final.log`, `host-results.json`, `restricted-host-results.json`,
-`host-final.log`, and `vsix-host-results.json`. VSIX content validation checks that
-no core checkout, environment, test profile, node_modules, or test helper is
-packaged, and that the packaged MIT LICENSE bytes equal the original LICENSE.
+The host tests open a workspace with an EXPLICIT_MODULES project
+(`project/pietto.toml`, `schema_version = 2`, modules `models/users.pietto`
+and `models/report.pietto`, where `report` imports `users` and selects the
+unknown field `emial`), a second configuration `project/models/pietto.toml`
+that selects the same modules, and `loose/outside.pietto` outside the project.
+Every diagnostic comes from the real `pietto lsp`.
 
-## Measurements and practical limits
+1. **Project root.** `Pietto: Select Explicit Project Root` stores
+   `pietto.projectRoots: ["project"]`. `report.pietto` then has exactly one
+   diagnostic: code `PIE-S2102`, message `Unknown field: emial`, Error, range
+   7:8–7:13 covering `emial`. The import resolves, so there is no `PIE-S2708`.
+   Exactly one `pietto lsp` child of the extension host runs, with `-I`.
+2. **Fix by edit.** An unsaved edit to `email` clears the diagnostic; the file
+   on disk is unchanged and the buffer stays dirty.
+3. **Outside the root.** `loose/outside.pietto` is checked as a single file:
+   `PIE-S2708` (Warning, 0:0–1:17, the import) and `PIE-S2301`
+   `Unknown relation: users` (Error, 4:4–4:14).
+4. **Editor-only message.** With roots `["project", "project/models"]` both
+   modules, the open one and the unopened one, get only
+   `This file belongs to two project roots: <root>/project and <root>/project/models. Keep one of them in projectRoots.`:
+   no code, Error, at 0:0. The outside file keeps its single-file diagnostics.
+5. **Single file mode.** `Pietto: Use Single File Mode` sets the roots to
+   `[]`; the open module is checked as a single file (`PIE-S2301`,
+   `PIE-S2708`) and the unopened module's diagnostics are gone.
+6. **Untitled buffer.** An untitled Pietto buffer gets `PIE-S2301`
+   `Unknown relation: nowhere` at 1:4–1:16.
+7. **No pietto.** The same interpreter with `-S` (no site-packages) gives one
+   error message, `... could not run "pietto lsp" (ModuleNotFoundError: No module named 'pietto'). Install pietto 0.1.10 or later ...`;
+   three seconds later there is still one message, no client, no server
+   process and no stale diagnostics.
+8. **Recovery and restart.** Removing `-S` brings the diagnostics back with
+   one server; `Pietto: Restart Language Server` replaces it with a new
+   process.
+9. **Empty interpreter path.** `pietto.pythonPath` set to `""` gives one
+   message, `Pietto diagnostics are off: "" could not run "pietto lsp" (The argument 'file' cannot be empty. ...`,
+   and no server; restoring the setting brings the diagnostics back.
+10. **A server that never answers.** A stand-in interpreter (a shell script)
+   passes the `--help` probe, then reads requests without answering. After
+   30 seconds there is one message, `... has not answered within 30 seconds. ...`;
+   restoring `pietto.pythonPath` then replaces the silent process with one
+   real server and the diagnostics come back.
+11. **Pietto without lsp.** The released 0.1.9 gives one message with
+   `pietto: error: argument command: invalid choice: 'lsp' ...`, no server;
+   restoring the interpreter brings the diagnostics back.
 
-The preserved first successful source-host run is
-`artifacts/history/host-first.pass.json`. One 207-byte, 13-line single-file buffer
-measured cold bridge reply **463.897 ms**. An automatic unsaved type edit, without
-flushing analysis, reached the requested checked version in **47.954 ms** with
-the test profile's **20 ms** debounce (product default is 250 ms). A warm refresh
-of **9 observed documents**, one explicit project, and **6 actual compiler requests**
-took **644.289 ms**. Ten real Hover requests left compiler request count at
-**76 before / 76 after**. These timings are fixture-specific, not a general SLA.
+Restricted Mode: the workspace is untrusted, the user interpreter is the real
+one and the workspace names a fake one with `pietto.projectRoots: ["."]`. After
+opening a file with an error and running `Pietto: Restart Language Server`,
+five seconds pass with no client, no `pietto lsp` process, no diagnostics and
+no message; the workspace interpreter is ignored; the snippets (`count`,
+`def`, `enum`, `export`, `first`, `import`, `join`, `last`, `query` three
+times, `relationship`, `shape`, `source`, `sum`, `unique`) are offered, and
+indented blocks fold without their trailing blank lines (VS Code's indentation
+folding with `folding.offSide`; folds 0–1, 3–6 and 5–6 of the test file).
 
-Adapter-only measurements use the 411-byte `examples/single.pietto` and the
-4-module example project, two warm repetitions in the same worker:
+## Not run
 
-- Native single cold 236.699 ms; warm 7.371–8.304 ms.
-- WSL single cold 6382.907 ms; warm 6.778–6.913 ms.
-- WSL project first 3597.226 ms after single-file imports; warm 375.375–474.837 ms.
-
-Exact workload/identity/cache counters are in
-`artifacts/adapter-performance-{native,wsl}.json`. The initial WSL fingerprint
-read from the Windows mount is expensive. It is cached once per worker; no
-speedup is inferred from comparing different workloads. Refresh/settings
-restart the worker. Pending work remains one active request and one coalesced
-refresh; source/configuration limits and the 20-record metric bound are explicit.
-
-## Repairs and preservation
-
-Integration review repaired global completion shadowing, repeated qualified
-insertion, GROUP ORDER scope leakage, JOIN ON pre-match facts, aliases/field
-origins, Unicode separator positions, BOM partial declarations, stale tree
-targets, source membership and resolved-root boundaries, malformed projected
-leaves, per-root failure isolation, configuration link reads/creation, and
-ambiguous source bindings. Ponytail simplification retained one service/bridge
-and native controls; no webview, LSP duplicate, execution engine, speculative
-framework, or core copy was added to shipped code.
-
-Historical failures remain recorded in `artifacts/history/`: the initial
-Windows project trusted-open failure was routed through WSL without changing
-core laws; platform-dependent fingerprint sorting was made explicit; the host
-test's substring `email` incorrectly matched `emails`; and a canceled test
-configuration update left a failing interpreter in a task-only workspace.
-Test setup/finally cleanup now restore that task configuration through actual
-save/configuration events. Failed runs were not relabelled as passes.
-
-The initial local delivery was based on Git HEAD
-`80869f37dcb6f58546ec18cb3b7e823982416162`, before committing or publishing.
-Original LICENSE SHA-256 remains
-`6BF991096877DD6B4AC2E4D49CC4FBFB510FA34DA773AE6DF7FDE04346D1640E`.
-Core was read-only throughout. Its owner moved it to audit head `177c2e189...`;
-the final read-only status retained untracked `.agents/` and `NUL`. The core
-environment still has historical distribution metadata 0.1.1; this extension's
-new release environments have actual 0.1.2. No core modification, tag,
-repository-setting change, DB operation, or cloud job is part of this extension.
-The original local-delivery records and candidate are preserved in ignored
-`artifacts/history/`; publication preparation does not rewrite those records.
+- Windows: native Windows Python, the Windows desktop with the `wsl.exe`
+  launcher (its path mapping has unit tests only), and a Remote WSL session.
+- macOS, and VS Code 1.90.0, the oldest version `engines.vscode` admits.
+- Pixel inspection of highlighting; the grammar is checked by the TextMate
+  tests.
+- The open-under-two-URIs, letter-case and partial-change editor messages, and
+  the Not checked message; the host tests cover the two-roots message.

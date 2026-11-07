@@ -1,10 +1,8 @@
-mode checked
-
-import "models/facade.pietto":
-    source people
+from "models/facade.pietto" import (
+    source people)
 
 shape User:
-    local_only: Text not null
+    local_only: Text
 
 query emails:
     from people
@@ -12,5 +10,5 @@ query emails:
         id
         email
 
-export:
-    query emails
+export (
+    query emails)

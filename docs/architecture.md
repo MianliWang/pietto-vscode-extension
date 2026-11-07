@@ -1,140 +1,108 @@
-# Architecture and capability map
+# Architecture
 
-One TypeScript analysis service, native VS Code providers/trees, TextMate
-highlighting, and one Python JSON-lines projection. No LSP/webview duplication,
-database runtime, source upload, or vendored compiler implementation.
+The extension is declarative language support plus one language client.
 
-## Reference and runtime identity
+| Part | Owner | Needs Workspace Trust |
+| --- | --- | --- |
+| Highlighting | `syntaxes/pietto.tmLanguage.json` (TextMate) | no |
+| Snippets | `snippets/pietto.json` | no |
+| Comments, brackets, indentation, folding | `language-configuration.json` (folding is VS Code's indentation folding with `folding.offSide`) | no |
+| Diagnostics | `pietto lsp`, through `vscode-languageclient` | yes |
 
-The initial supplied reference was `9e74aa681133a359ee825b31a9b8573c29932d7c`.
-The owner subsequently updated the target to released **pietto 0.1.2**, release
-source/tag `69192849bb2a4ace73c3f806031616a4c89b555b`, S21 audit head
-`177c2e18906f22c3d42a9b0c9d65944d9af5a21d`. Phase69 has all 21 slices closed.
-Later checkouts are not assumed equivalent to this release.
+## Grammar and snippets
 
-The first isolated environments were installed from a read-only `git archive`
-of release source. At a safe checkpoint after the editor test process exited,
-separate environments were created from the official PyPI wheel. Old environments
-were preserved. The release wheel is `pietto-0.1.2-py3-none-any.whl`, 2,073,704 bytes,
-SHA-256 `123257f48a7b40825a303110253675aebf7a25f304b0ca0780f16259c423840f`.
-`artifacts/release-wheel-receipt.json` records the official download URLs,
-dependency hashes, environment origins, and installed interface identity.
+`syntaxes/pietto.tmLanguage.json` (scope `source.pietto`) follows Pietto's
+`grammar/Pietto.g4`. Each top-level declaration is a block that lasts while
+its lines are indented, so field rules apply only in shapes and clause rules
+only in relation bodies. Pietto lets most keywords be names, so a clause word
+is a keyword only where its clause follows on the same line, and frame words
+only together with their bound; retired header lines (`pietto 0.9`, `mode`,
+`dialect`, `encoding`) get no keyword scope. The grammar is the source of
+truth; `tests/sync_language.py` only writes test fixtures from extracted
+Pietto trees: `tests/fixtures/language.json` (the `Pietto.g4` keywords, the
+names they may spell, and the built-in types, functions, aggregates and window
+functions of Pietto's semantic catalogs) and `tests/fixtures/corpus.json` (the
+`pietto` code blocks of Pietto's docs and its examples, with the keyword roles
+and literal spans from Pietto's own lexer and parser). The tests hold the
+grammar's word lists equal to that snapshot and every corpus keyword, name,
+string, number and comment to its scope. The snippets use the canonical forms
+of Pietto's `docs/style.md`; each must pass `pietto check` and
+`pietto fmt --check` (run with `PIETTO_TEST_PYTHON`).
 
-The actual tested package origins are recorded in `docs/verification.md`. The
-adapter hashes every installed package `.py` owner, sorted by exact POSIX-relative
-path, rather than trusting distribution metadata. Release compatibility hash:
-`f3b882a3a6f1bd2dc5cdbce3aea112a5cf9876162b0157ddd359cb05159c83ee`.
-Original baseline hash:
-`4dd8c1db45c99f48a0d13f503297ca976091e97b4b315a659e1f5b51b86ecf86`.
-Runtime acceptance of the baseline hash is a compatibility gate, not a claim that
-the old PyPI 0.1.1 artifact was tested. Identity is captured once per worker;
-Refresh and interpreter-setting changes restart it to load/recheck changed code.
+## Language client
 
-## Compiler owners
+`src/extension.ts` creates one `LanguageClient` per window with the official
+`vscode-languageclient` package, pinned to **9.0.1**: it is the newest release
+whose `engines.vscode` (`^1.82.0`) accepts this extension's `^1.90.0`; every
+10.x and 11.x release requires `^1.91.0`. It ships in the VSIX with its
+dependencies (`vscode-languageserver-protocol` 3.17.5, `vscode-jsonrpc` 8.2.0,
+`vscode-languageserver-types` 3.17.5, `semver`, `minimatch`); none has an
+install script.
 
-- `pietto.parser_api.parse_source(source, path=...)`: original live text and
-  authored AST/spans. Parse errors have no successful AST. Generated PiettoLexer
-  supplies exact token occurrences, contextual identifiers, and string/comment
-  exclusions. Original diagnostics remain authoritative during recovery.
-- `pietto.semantic.analyze`: single-file semantic model, actual type expansions,
-  nullability, source/relation row schemas, FROM resolutions, expression value
-  types, LET scopes, windows, and relationship identities.
-- `pietto.semantic.catalog`: actual builtin types/functions and signatures.
-  Single-file row helpers and existing ORDER/qualified/LET stage owners provide
-  editor projections without TypeScript resolution/type inference.
-- `_project.config`, `_project.source_selection`, and trusted source loading: explicit
-  root/configuration, include/exclude membership, pinned reads, and bounded input.
-  `_project.check.check_project_parse_only`, `build_empty_project_semantic_result`,
-  and `build_project_completed_semantic_result`: project semantics. The historical
-  `empty` function name does not imply a per-file substitute.
-- Module catalogs/facades/attribution and semantic fact preservation provide
-  authored `(module, namespace, kind, name, occurrence)` identities, canonical
-  imports/re-exports, field origins, and stage reference candidates. Completed
-  output owners override deferred intermediate schemas. JOIN namespace/window/
-  QUALIFY and GROUP ORDER owners determine candidates and reference identity.
+- Transport: stdio. The extension spawns the server itself, without a shell
+  and with `windowsHide`, and hands the process to the client.
+- Command: `pietto.pythonPath`, then `pietto.pythonArguments`, then
+  `-I -c "import sys; from pietto.cli import main; sys.exit(main(['lsp']))"`.
+  `pietto.cli:main` is the target of Pietto's `pietto` console script; Pietto
+  has no `python -m pietto`. `-I` keeps the working directory, user
+  site-packages and `PYTHON*` variables out of the import path. The script has
+  no double quote, `$`, backtick or backslash, so it survives a `wsl.exe --`
+  launcher that passes it to a shell.
+- Documents: `file` and `untitled` documents with language `pietto`, full
+  sync, as `pietto lsp` requires. Diagnostics go to the `pietto` collection
+  with the server's `code`, `message`, `range` and `severity`.
+- Initialization: `{"projectRoots": [...]}`. Each workspace folder's
+  `pietto.projectRoots` entries resolve against that folder; duplicates are
+  dropped (the server refuses them), and the first spelling is kept.
+- Restarts: a change of `pietto.pythonPath`, `pietto.pythonArguments` or
+  `pietto.projectRoots`, a change of workspace folders, granting trust, and
+  **Pietto: Restart Language Server** stop the client and start a new one.
+  Restarts run one at a time, and each waits at most 30 s for the server to
+  answer `initialize`, so a server that never answers cannot hold back the
+  next restart. Stopping sends `shutdown` and `exit`, then kills the process
+  if it is still there.
+- Settings are read defensively: a list setting that holds anything but a list
+  counts as empty, and only its strings are used.
 
-Private project/stage APIs stay inside `adapter/analysis.py`, behind the package
-fingerprint gate and real-compiler compatibility tests. Only typed projections
-cross the boundary. No arbitrary private graph is serialized. Existing check,
-Project Explain, metadata artifact, and SQL contracts were inspected as distinct
-contracts; none is treated as a ready-made project editor index. Metadata alone
-lacks these scoped reference/stage observations and omits connector arguments.
+## Failure handling
 
-## Analysis and location boundary
+Before each start the extension runs `pietto lsp --help` through the same
+command, with a 60 s limit. It exits 0 only where the `lsp` subcommand exists.
+Otherwise the extension shows one error message with the last line of the
+interpreter's error output (decoded as UTF-16LE when it holds NUL bytes, as
+the errors of `wsl.exe` do), or with Node's error when the interpreter cannot
+be started at all, such as an empty `pietto.pythonPath`, and starts nothing;
+the next attempt is the next restart trigger. This avoids the client's crash
+loop and its generic "couldn't create connection" messages for the common
+cases: no interpreter, no pietto, a pietto older than 0.1.10. A server that
+has not answered `initialize` 30 s after it starts gets one error message as
+well and is replaced by the next restart. A server that exits after a
+successful start is restarted by the client's default handler, at most four
+times in three minutes.
 
-Requests carry ID, an optional **explicitly selected** project root, and live
-document URI/path/text/version overlays. The core selects disk members. Only
-selected sources/configuration are copied to a bounded temporary shadow project,
-preserving relative membership and imports; live selected buffers replace those
-snapshot bytes. Excluded buffers receive separate single-file analysis. Shadow
-files are cleaned on normal completion. Original source and core files are never
-rewritten, saved, flattened, or relaxed around the core trust laws.
+The server re-reads a project root only on a document event inside it, so
+the README asks for **Pietto: Restart Language Server** after an edit of
+`pietto.toml` or of modules outside the editor.
 
-Replies carry protocol 1, compiler identity, current document states, diagnostics,
-symbols/schemas, occurrences, and compiler-produced completion contexts. One
-validator checks all projected leaves/ranges before any native provider sees
-them. One URI/position boundary converts one-based compiler code-point columns
-to zero-based UTF-16. BOM offsets, CRLF, astral characters, Unicode separators,
-non-ASCII paths, absent locations, and Windows-to-WSL drive paths have fixtures.
-Location-less Problems entries use a labelled document header anchor because
-VS Code requires a range; they do not claim an exact compiler location.
+## Windows desktop with a WSL interpreter
 
-Document/dependency/settings/workspace changes clear current observations and
-increment an epoch. Older replies cannot publish. One worker and one coalesced
-refresh bound pending work. Providers and tree expansion use the current shared
-snapshot without compiling again. Per-scope process failures leave independent
-successful roots available, with visible error nodes. Caches are current
-observations only; timing history is bounded to 20 records. Process timeout,
-crash, incompatible/malformed output, shutdown, and workspace removal clear or
-restart owned work without blocking synchronous providers.
+When `pietto.pythonPath` is `wsl.exe` on Windows, `src/launch.ts` maps drive
+paths to `/mnt/<drive>/…` for the project roots and, through the client's
+`uriConverters`, for document URIs in both directions. Other paths are passed
+unchanged, so projects on the WSL file system are for Remote WSL, where the
+extension runs inside WSL (`extensionKind: workspace`) and needs no mapping.
 
-## Feature-to-evidence map
+## Trust
 
-| Required behavior | Producer/input/scope | Freshness and failure | Verification |
-| --- | --- | --- | --- |
-| Syntax/edit configuration/snippets | Actual grammar, TextMate, colon/indent folding | Independent of Python; strings/comments/contextual names remain distinct | Real Oniguruma/TextMate tests, snippets parsed by core |
-| Diagnostics | Original parser/semantic/project diagnostics and available related spans | Live versions/dependencies; obsolete diagnostics clear; no recovered success | Adapter error/fix/import tests and native Problems host |
-| Completion | Compiler catalogs, schemas, stage candidates, bounded syntax recovery | Narrowest context; exact qualifier filtering; no stale authoritative candidates | LET/GROUP/JOIN/window fixtures and real completion insertion |
-| Hover/definition | Actual value type/nullability and canonical reference identity | Unknown/ambiguous identity has no invented target | Single/project field/symbol/alias host navigation and UTF-16 selection |
-| Outline/model explorer | Authored declarations, checked schemas, origins/relationships | Parsed/checked/error states; URI-scoped identities; current targets at click time | Native outline/tree provider host, refresh identity, same-spelled modules |
-| Connections | Authored provider/safe physical mapping plus extension-owned allowlisted JSON | Exact root/module/source binding; invalid config fails closed; live state always not checked | Config/schema tests, secret rejection, native tree, zero network/driver calls |
-| Trust/failure/cleanup | VS Code Workspace Trust plus shell-free isolated Python | No process in Restricted Mode; bounded timeout/process/output; disposal | Separate trust-enabled host, real crash/malformed/timeout workers and PID checks |
+`capabilities.untrustedWorkspaces` is `limited`. In Restricted Mode the
+extension starts no process and ignores `pietto.pythonPath` and
+`pietto.pythonArguments` from the workspace (`restrictedConfigurations`).
+Highlighting, snippets and folding work.
 
-## Configuration boundary and references
+## What the extension does not do
 
-`pietto-connections.json` is an extension-owned format with a JSON Schema and a
-matching runtime validator. It is neither a core format nor proof of a working
-connection. Only fixed profile fields and explicit scoped mappings are projected.
-Raw configuration objects, unknown keys, secret values, and executable data are
-not copied into views, logs, or errors. Reads/creation check resolved roots and
-reject escaping/dangling links. No credential discovery, SQL, TCP/DNS probes,
-driver imports, or catalog fetching is part of preview.
-
-Malloy read-only reference: `4dec85b662bab74a2714f10daefa5a345c68b385`, specifically
-`src/extension/tree_views/schema_view.ts`, `connections_view.ts`, and server
-definitions/hover/schema completions. Borrowed organization: separate native
-trees, typed field hierarchy, scoped IDs, compiler observations, and disposal.
-Its runtime, telemetry, silent last-good fallback, and connection policies are
-not copied.
-
-Official implementation references: [native trees](https://code.visualstudio.com/api/extension-guides/tree-view),
-[TextMate](https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide),
-[Workspace Trust](https://code.visualstudio.com/api/extension-guides/workspace-trust),
-[remote host placement](https://code.visualstudio.com/api/advanced-topics/remote-extensions),
-and [supported editor test tooling](https://github.com/microsoft/vscode-test).
-
-## Effective skills
-
-- Caveman FULL: actual installed `~/.codex/skills/caveman/SKILL.md`
-  in WSL Ubuntu, SHA-256 `415d43518f2b1a9498c15a445d4657117b129ee5e81b19454ce348439cc6672b`.
-  This installed revision merges old FULL into its default voice; no separate
-  FULL material exists. Technical facts remain intact; repository text is normal English.
-- Ponytail FULL: `%USERPROFILE%/.codex/skills/ponytail/SKILL.md`, SHA-256
-  `D11DF477B1A4E807155A7E578B135A4D9C52BEEF06EB3A44322940C331A06942`.
-  Standard libraries/native VS Code first, one shared bridge, no speculative
-  frameworks; required validation, security, accessibility, and behavior remain.
-
-Both actual files were read before substantive implementation. No skill or
-global skill configuration was installed/replaced/edited. Code Work was the only
-additional implementation skill; Computer Use was read for the attempted GUI
-check, whose native helper was unavailable.
+No hover, completion, definition, outline, formatter, SQL, tree views,
+connection configuration, telemetry, source upload or automatic installation.
+The 0.1.0 adapter that provided hover, completion, definition, outline and the
+model and connection views imported private Pietto modules, so it was removed;
+those features return only on public Pietto contracts.

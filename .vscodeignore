@@ -3,16 +3,13 @@
 .vscode/**
 .local/**
 .vscode-test/**
-node_modules/**
 src/**
 tests/**
 out/tests/**
-scripts/**
 artifacts/**
 debug.log
 *.vsix
 **/*.map
-**/__pycache__/**
-adapter/test_*.py
 tsconfig.json
 eslint.config.mjs
+docs/**

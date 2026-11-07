@@ -3,115 +3,495 @@
   "name": "Pietto",
   "scopeName": "source.pietto",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    {
-      "match": "^\\s*(mode)\\s+(loose|checked|strict)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.pietto" },
-        "2": { "name": "constant.language.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(type)\\s+([A-Za-z_][A-Za-z_0-9]*)\\s*(=)\\s*([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.declaration.pietto" },
-        "2": { "name": "entity.name.type.pietto" },
-        "3": { "name": "keyword.operator.assignment.pietto" },
-        "4": { "name": "support.type.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(source)\\s+([A-Za-z_][A-Za-z_0-9]*)(?:\\s*(:)\\s*([A-Za-z_][A-Za-z_0-9]*))?\\s+(is)\\b",
-      "captures": {
-        "1": { "name": "keyword.declaration.pietto" },
-        "2": { "name": "entity.name.type.pietto" },
-        "3": { "name": "punctuation.separator.pietto" },
-        "4": { "name": "support.type.pietto" },
-        "5": { "name": "keyword.operator.word.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(shape|enum|source|table|query|constraint|derive|relationship|check|unique|index|endpoint)\\s+([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.declaration.pietto" },
-        "2": { "name": "entity.name.type.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(from)\\s+([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.control.pietto" },
-        "2": { "name": "variable.other.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(inner|left|cross|right|full|semi|anti)\\s+(join)\\s+([A-Za-z_][A-Za-z_0-9]*)\\s+(as)\\s+([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.control.pietto" },
-        "2": { "name": "keyword.control.pietto" },
-        "3": { "name": "variable.other.pietto" },
-        "4": { "name": "keyword.control.pietto" },
-        "5": { "name": "variable.other.pietto" }
-      }
-    },
-    {
-      "match": "([A-Za-z_][A-Za-z_0-9]*)\\s*(:)\\s*([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "variable.other.member.pietto" },
-        "2": { "name": "punctuation.separator.pietto" },
-        "3": { "name": "support.type.pietto" }
-      }
-    },
-    {
-      "match": "^\\s*(pietto|mode|dialect|encoding|import(?=\\s*['\"])|export(?=\\s*:)|ensure|where|group\\s+by|partition\\s+by|order\\s+by|select(?:\\s+distinct)?|(?:let|satisfying|qualify)(?=\\s*:)|limit|on|via|window|(?:union|intersect|except)(?:\\s+(?:all|distinct))?(?=\\s*:)|(?:rows|range|groups)(?=\\s+(?:between|unbounded|current|[0-9])))\\b(?!\\s*=)",
-      "name": "keyword.control.pietto"
-    },
-    {
-      "match": "(->)\\s*([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.operator.pietto" },
-        "2": { "name": "support.type.pietto" }
-      }
-    },
-    {
-      "match": "\\b(as)\\s+([A-Za-z_][A-Za-z_0-9]*)",
-      "captures": {
-        "1": { "name": "keyword.control.pietto" },
-        "2": { "name": "variable.other.pietto" }
-      }
-    },
-    { "match": "\\.[A-Za-z_][A-Za-z_0-9]*", "name": "variable.other.member.pietto" },
-    { "match": "\\b[A-Za-z_][A-Za-z_0-9]*(?=\\s*=([^=]|$))", "name": "variable.other.pietto" },
-    { "match": "\\b(?:true|false|null)\\b", "name": "constant.language.pietto" },
-    { "match": "\\b(?:nullable|not|and|or|is|between|like|derive|ensure|window)\\b", "name": "keyword.operator.word.pietto" },
-    { "match": "\\b(?:on|when)(?=\\s+[A-Za-z_(])", "name": "keyword.control.pietto" },
-    { "match": "\\b(?:from\\s+(?:first|last)|(?:respect|ignore)\\s+nulls|unbounded\\s+(?:preceding|following)|current\\s+row|exclude\\s+(?:no\\s+others|current\\s+row|group|ties))\\b|(?<=\\S)\\s+(?:asc|desc|preceding|following)(?=\\s*(?:#|$))", "name": "keyword.control.pietto" },
-    { "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b", "name": "constant.numeric.pietto" },
-    { "match": "@[A-Za-z_][A-Za-z_0-9]*", "name": "storage.type.annotation.pietto" },
-    { "match": "\\b[A-Za-z_][A-Za-z_0-9]*(?=\\s*\\()", "name": "support.function.pietto" },
-    { "match": "->|==|!=|<=|>=|[=<>+*/%\\-]", "name": "keyword.operator.pietto" },
-    { "match": "[(),.:]", "name": "punctuation.separator.pietto" }
+    {"include": "#comment"},
+    {"include": "#import"},
+    {"include": "#export"},
+    {"include": "#type-declaration"},
+    {"include": "#enum-declaration"},
+    {"include": "#function-declaration"},
+    {"include": "#shape-declaration"},
+    {"include": "#source-declaration"},
+    {"include": "#relation-declaration"},
+    {"include": "#relationship-declaration"},
+    {"include": "#constant-declaration"},
+    {"include": "#expression"}
   ],
   "repository": {
-    "comments": {
-      "match": "#.*$",
-      "name": "comment.line.number-sign.pietto"
+    "comment": {
+      "match": "(#).*$",
+      "name": "comment.line.number-sign.pietto",
+      "captures": {"1": {"name": "punctuation.definition.comment.pietto"}}
     },
-    "strings": {
+    "string": {
       "patterns": [
         {
           "name": "string.quoted.double.pietto",
           "begin": "\"",
-          "end": "\"|$",
-          "patterns": [ { "match": "\\\\.", "name": "constant.character.escape.pietto" } ]
+          "beginCaptures": {"0": {"name": "punctuation.definition.string.begin.pietto"}},
+          "end": "(\")|(\\n)",
+          "endCaptures": {
+            "1": {"name": "punctuation.definition.string.end.pietto"},
+            "2": {"name": "invalid.illegal.unclosed-string.pietto"}
+          },
+          "patterns": [{"match": "\\\\.", "name": "constant.character.escape.pietto"}]
         },
         {
           "name": "string.quoted.single.pietto",
           "begin": "'",
-          "end": "'|$",
-          "patterns": [ { "match": "\\\\.", "name": "constant.character.escape.pietto" } ]
+          "beginCaptures": {"0": {"name": "punctuation.definition.string.begin.pietto"}},
+          "end": "(')|(\\n)",
+          "endCaptures": {
+            "1": {"name": "punctuation.definition.string.end.pietto"},
+            "2": {"name": "invalid.illegal.unclosed-string.pietto"}
+          },
+          "patterns": [{"match": "\\\\.", "name": "constant.character.escape.pietto"}]
         }
+      ]
+    },
+    "number": {"match": "\\b[0-9](?:_?[0-9])*(?:\\.[0-9](?:_?[0-9])*)?\\b", "name": "constant.numeric.pietto"},
+    "builtin-type": {
+      "match": "\\b(?:Any|Bool|Bytes|Date|Decimal|Float|Int|Json|Text|Timestamp|UUID)\\b",
+      "name": "support.type.builtin.pietto"
+    },
+    "builtin-function": {
+      "match": "\\b(?:abs|add_months|coalesce|concat|contains|date_of|date_trunc|day|ends_with|hour|len|lower|lpad|matches|minute|month|now|nullif|replace|round|same_value|sign|starts_with|substr|trim|upper|year)(?=[ \\t]*\\()",
+      "name": "support.function.builtin.pietto"
+    },
+    "builtin-aggregate": {
+      "match": "\\b(?:all|any|avg|count|count_distinct|first|last|max|median|min|pstdev|pvariance|quantile|stddev|string_agg|sum|variance)(?=[ \\t]*\\()",
+      "name": "support.function.builtin.aggregate.pietto"
+    },
+    "builtin-window-function": {
+      "match": "\\b(?:cume_dist|dense_rank|first_value|lag|last_value|lead|nth_value|ntile|percent_rank|rank|row_number)(?=[ \\t]*\\()",
+      "name": "support.function.builtin.window.pietto"
+    },
+    "type-name": {"patterns": [{"include": "#builtin-type"}, {"match": "[A-Za-z_][A-Za-z_0-9]*", "name": "entity.name.type.pietto"}]},
+    "type-suffix": {
+      "patterns": [
+        {
+          "match": "(\\|)[ \\t]*(None)\\b",
+          "captures": {"1": {"name": "keyword.operator.type.pietto"}, "2": {"name": "constant.language.pietto"}}
+        },
+        {"match": "\\b(nullable)\\b", "name": "storage.modifier.nullable.pietto"}
+      ]
+    },
+    "parameters": {
+      "begin": "\\(",
+      "beginCaptures": {"0": {"name": "punctuation.parenthesis.begin.pietto"}},
+      "end": "\\)",
+      "endCaptures": {"0": {"name": "punctuation.parenthesis.end.pietto"}},
+      "patterns": [
+        {"include": "#comment"},
+        {
+          "match": "([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(:)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {
+            "1": {"name": "variable.parameter.pietto"},
+            "2": {"name": "punctuation.separator.colon.pietto"},
+            "3": {"patterns": [{"include": "#type-name"}]}
+          }
+        },
+        {"include": "#type-suffix"},
+        {"include": "#expression"}
+      ]
+    },
+    "module-item": {
+      "patterns": [
+        {
+          "match": "\\b((?:enum|query|shape|source|table|type))[ \\t]+([A-Za-z_][A-Za-z_0-9]*)(?:[ \\t]+(as)[ \\t]+([A-Za-z_][A-Za-z_0-9]*))?",
+          "captures": {
+            "1": {"name": "storage.type.pietto"},
+            "2": {"name": "entity.name.type.pietto"},
+            "3": {"name": "keyword.control.import.pietto"},
+            "4": {"name": "entity.name.type.pietto"}
+          }
+        },
+        {
+          "match": "\\b((?:def|relationship))[ \\t]+([A-Za-z_][A-Za-z_0-9]*)(?:[ \\t]+(as)[ \\t]+([A-Za-z_][A-Za-z_0-9]*))?",
+          "captures": {
+            "1": {"name": "storage.type.pietto"},
+            "2": {"name": "entity.name.function.pietto"},
+            "3": {"name": "keyword.control.import.pietto"},
+            "4": {"name": "entity.name.function.pietto"}
+          }
+        }
+      ]
+    },
+    "module-list": {
+      "begin": "\\(",
+      "beginCaptures": {"0": {"name": "punctuation.parenthesis.begin.pietto"}},
+      "end": "\\)",
+      "endCaptures": {"0": {"name": "punctuation.parenthesis.end.pietto"}},
+      "patterns": [{"include": "#comment"}, {"include": "#module-item"}, {"include": "#punctuation"}]
+    },
+    "import": {
+      "patterns": [
+        {
+          "begin": "^(import)[ \\t]+(?=[\\\"'])",
+          "beginCaptures": {"1": {"name": "keyword.control.import.pietto"}},
+          "while": "^(?=[ \\t]|\\n|#|\\))",
+          "patterns": [{"include": "#comment"}, {"include": "#string"}, {"include": "#module-item"}, {"include": "#punctuation"}]
+        },
+        {
+          "begin": "^(from)(?=[ \\t]+[\\\"'])",
+          "beginCaptures": {"1": {"name": "keyword.control.import.pietto"}},
+          "while": "^(?=[ \\t]|\\n|#|\\))",
+          "patterns": [
+            {"include": "#comment"},
+            {"include": "#string"},
+            {"match": "\\b(import)\\b", "name": "keyword.control.import.pietto"},
+            {"include": "#module-list"},
+            {"include": "#module-item"},
+            {"include": "#punctuation"}
+          ]
+        }
+      ]
+    },
+    "export": {
+      "begin": "^(export)\\b",
+      "beginCaptures": {"1": {"name": "keyword.control.import.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [{"include": "#comment"}, {"include": "#module-list"}, {"include": "#module-item"}, {"include": "#punctuation"}]
+    },
+    "type-declaration": {
+      "begin": "^(type)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(=)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {
+        "1": {"name": "storage.type.pietto"},
+        "2": {"name": "entity.name.type.pietto"},
+        "3": {"name": "keyword.operator.assignment.pietto"},
+        "4": {"patterns": [{"include": "#type-name"}]}
+      },
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [
+        {"include": "#comment"},
+        {"include": "#type-suffix"},
+        {"match": "\\b(ensure)\\b", "name": "keyword.other.constraint.pietto"},
+        {"include": "#expression"}
+      ]
+    },
+    "enum-declaration": {
+      "begin": "^(enum)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {"1": {"name": "storage.type.pietto"}, "2": {"name": "entity.name.type.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [
+        {"include": "#comment"},
+        {"include": "#punctuation"},
+        {"match": "[A-Za-z_][A-Za-z_0-9]*", "name": "variable.other.enummember.pietto"}
+      ]
+    },
+    "function-declaration": {
+      "begin": "^(def|constraint|derive)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {"1": {"name": "storage.type.pietto"}, "2": {"name": "entity.name.function.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [
+        {"include": "#comment"},
+        {"begin": "\\G(?=[ \\t]*\\()", "end": "(?<=\\))", "patterns": [{"include": "#parameters"}]},
+        {
+          "match": "(->)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.operator.arrow.pietto"}, "2": {"patterns": [{"include": "#type-name"}]}}
+        },
+        {"include": "#type-suffix"},
+        {"match": "\\b(return)\\b", "name": "keyword.control.flow.pietto"},
+        {"include": "#expression"}
+      ]
+    },
+    "source-declaration": {
+      "match": "^(source)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)(?:[ \\t]*(:)[ \\t]*([A-Za-z_][A-Za-z_0-9]*))?[ \\t]*(?:(=)|(is)\\b)",
+      "captures": {
+        "1": {"name": "storage.type.pietto"},
+        "2": {"name": "entity.name.type.pietto"},
+        "3": {"name": "punctuation.separator.colon.pietto"},
+        "5": {"name": "keyword.operator.assignment.pietto"},
+        "6": {"name": "keyword.operator.word.pietto"},
+        "4": {"patterns": [{"include": "#type-name"}]}
+      }
+    },
+    "constant-declaration": {
+      "match": "^([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(:)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+      "captures": {
+        "1": {"name": "variable.other.constant.pietto"},
+        "2": {"name": "punctuation.separator.colon.pietto"},
+        "3": {"patterns": [{"include": "#type-name"}]}
+      }
+    },
+    "shape-declaration": {
+      "begin": "^(shape)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {"1": {"name": "storage.type.pietto"}, "2": {"name": "entity.name.type.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [{"include": "#comment"}, {"include": "#shape-item"}, {"include": "#expression"}]
+    },
+    "shape-item": {
+      "patterns": [
+        {
+          "match": "^[ \\t]+(check)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(:)",
+          "captures": {
+            "1": {"name": "keyword.other.constraint.pietto"},
+            "2": {"name": "variable.other.pietto"},
+            "3": {"name": "punctuation.separator.colon.pietto"}
+          }
+        },
+        {
+          "match": "^[ \\t]+(unique|index)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]+(on)\\b(?:[ \\t]+([A-Za-z_][A-Za-z_0-9]*(?:[ \\t]*,[ \\t]*[A-Za-z_][A-Za-z_0-9]*)*)[ \\t]+(when)\\b)?",
+          "captures": {
+            "1": {"name": "keyword.other.constraint.pietto"},
+            "2": {"name": "variable.other.pietto"},
+            "3": {"name": "keyword.other.constraint.pietto"},
+            "5": {"name": "keyword.other.constraint.pietto"},
+            "4": {"patterns": [{"include": "#punctuation"}]}
+          }
+        },
+        {
+          "match": "^[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(=)[ \\t]*(check|unique|index)(?=[ \\t]*\\()",
+          "captures": {
+            "1": {"name": "variable.other.pietto"},
+            "2": {"name": "keyword.operator.assignment.pietto"},
+            "3": {"name": "keyword.other.constraint.pietto"}
+          }
+        },
+        {
+          "begin": "^[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(:)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+          "beginCaptures": {
+            "1": {"name": "variable.other.member.pietto"},
+            "2": {"name": "punctuation.separator.colon.pietto"},
+            "3": {"patterns": [{"include": "#type-name"}]}
+          },
+          "end": "$",
+          "patterns": [
+            {"include": "#comment"},
+            {"include": "#type-suffix"},
+            {
+              "match": "(?<=[\\w)])[ \\t]+(derive|ensure)\\b",
+              "captures": {"1": {"name": "keyword.other.constraint.pietto"}}
+            },
+            {
+              "match": "(@)([A-Za-z_][A-Za-z_0-9]*)",
+              "captures": {
+                "1": {"name": "punctuation.definition.annotation.pietto"},
+                "2": {"name": "storage.type.annotation.pietto"}
+              }
+            },
+            {"include": "#expression"}
+          ]
+        },
+        {"match": "(?<=\\))[ \\t]*(when)\\b", "captures": {"1": {"name": "keyword.other.constraint.pietto"}}}
+      ]
+    },
+    "relationship-declaration": {
+      "begin": "^(relationship)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {"1": {"name": "storage.type.pietto"}, "2": {"name": "entity.name.function.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [
+        {"include": "#comment"},
+        {"begin": "\\G(?=[ \\t]*\\()", "end": "(?<=\\))", "patterns": [{"include": "#parameters"}]},
+        {
+          "match": "^[ \\t]+(endpoint)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(:)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {
+            "1": {"name": "keyword.other.clause.pietto"},
+            "2": {"name": "variable.other.pietto"},
+            "3": {"name": "punctuation.separator.colon.pietto"},
+            "4": {"patterns": [{"include": "#type-name"}]}
+          }
+        },
+        {"match": "^[ \\t]+(on)\\b", "captures": {"1": {"name": "keyword.other.clause.pietto"}}},
+        {"include": "#expression"}
+      ]
+    },
+    "relation-declaration": {
+      "begin": "^(table|query)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+      "beginCaptures": {"1": {"name": "storage.type.pietto"}, "2": {"name": "entity.name.type.pietto"}},
+      "while": "^(?=[ \\t]|\\n|#|\\))",
+      "patterns": [
+        {"include": "#comment"},
+        {"begin": "\\G(?=[ \\t]*\\()", "end": "(?<=\\))", "patterns": [{"include": "#parameters"}]},
+        {"include": "#clause"},
+        {"include": "#expression"}
+      ]
+    },
+    "clause": {
+      "patterns": [
+        {
+          "match": "^[ \\t]+(from)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)(?=[ \\t]*(?:#|$))",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "variable.other.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(from)(?=[ \\t]+[A-Za-z_][A-Za-z_0-9]*[ \\t]*\\()",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(let)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(?:(=)(?!=)|(:))",
+          "captures": {
+            "1": {"name": "keyword.other.clause.pietto"},
+            "2": {"name": "variable.other.pietto"},
+            "3": {"name": "keyword.operator.assignment.pietto"},
+            "4": {"name": "punctuation.separator.colon.pietto"}
+          }
+        },
+        {
+          "match": "^[ \\t]+(let)[ \\t]*(:)",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "punctuation.separator.colon.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(capture)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "variable.other.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(?:(asof)[ \\t]+)?((?:anti|cross|full|inner|left|right|semi))[ \\t]+(join)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)(?:[ \\t]+(as)[ \\t]+([A-Za-z_][A-Za-z_0-9]*))?(?:[ \\t]+(on)\\b)?",
+          "captures": {
+            "1": {"name": "keyword.other.clause.pietto"},
+            "2": {"name": "keyword.other.clause.pietto"},
+            "3": {"name": "keyword.other.clause.pietto"},
+            "4": {"name": "variable.other.pietto"},
+            "5": {"name": "keyword.other.clause.pietto"},
+            "6": {"name": "variable.other.pietto"},
+            "7": {"name": "keyword.other.clause.pietto"}
+          }
+        },
+        {
+          "match": "^[ \\t]+(via)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "variable.other.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(on)(?=[ \\t]*:|[ \\t]+[^\\s=,.#])",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(where|having|satisfying|qualify|limit)(?=[ \\t]*:|[ \\t]+[^\\s=,.#])",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(select)(?:[ \\t]+(distinct))?(?=[ \\t]*:|[ \\t]+[^\\s=,.#])",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "^[ \\t]+(union|intersect|except)(?:[ \\t]+(all|distinct))?(?=[ \\t]*:|[ \\t]+[^\\s=,.#])",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "keyword.other.clause.pietto"}}
+        },
+        {"match": "^[ \\t]+(values)(?=[ \\t]*\\()", "captures": {"1": {"name": "keyword.other.clause.pietto"}}},
+        {"begin": "(?<=values)[ \\t]*(?=\\()", "end": "(?<=\\))", "patterns": [{"include": "#parameters"}]}
+      ]
+    },
+    "expression": {
+      "patterns": [
+        {"include": "#comment"},
+        {"include": "#string"},
+        {"include": "#number"},
+        {"include": "#cast"},
+        {
+          "match": "\\b(window)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.other.window.pietto"}, "2": {"name": "variable.other.pietto"}}
+        },
+        {"match": "\\b(window)\\b", "name": "keyword.other.window.pietto"},
+        {
+          "match": "\\b(order|partition|group)[ \\t]+(by)\\b",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "\\b(?:(rows|range|groups)(?:[ \\t]+(between))?|(and))[ \\t]+((?!(?:between|unbounded|current)\\b)(?:[A-Za-z_0-9][\\w.]*|\\([^()#]*\\))(?:[ \\t]*[-+*/%][ \\t]*(?!(?:between|unbounded|current)\\b)(?:[A-Za-z_0-9][\\w.]*|\\([^()#]*\\)))*)[ \\t]+(preceding|following)\\b",
+          "captures": {
+            "1": {"name": "keyword.other.window.pietto"},
+            "2": {"name": "keyword.other.window.pietto"},
+            "3": {"name": "keyword.operator.logical.pietto"},
+            "5": {"name": "keyword.other.window.pietto"},
+            "4": {"patterns": [{"include": "#expression"}]}
+          }
+        },
+        {
+          "match": "\\b(rows|range|groups)(?:[ \\t]+(between))?(?=[ \\t]+(?:unbounded|current)\\b)",
+          "captures": {"1": {"name": "keyword.other.window.pietto"}, "2": {"name": "keyword.other.window.pietto"}}
+        },
+        {
+          "match": "\\b(unbounded|current)[ \\t]+(preceding|following|row)\\b",
+          "captures": {"1": {"name": "keyword.other.window.pietto"}, "2": {"name": "keyword.other.window.pietto"}}
+        },
+        {
+          "match": "\\b(exclude)[ \\t]+(?:(no)[ \\t]+(others)|(current)[ \\t]+(row)|(group|ties))\\b",
+          "captures": {
+            "1": {"name": "keyword.other.window.pietto"},
+            "2": {"name": "keyword.other.window.pietto"},
+            "3": {"name": "keyword.other.window.pietto"},
+            "4": {"name": "keyword.other.window.pietto"},
+            "5": {"name": "keyword.other.window.pietto"},
+            "6": {"name": "keyword.other.window.pietto"}
+          }
+        },
+        {
+          "match": "(?<=\\))[ \\t]*(from)[ \\t]+(first|last)\\b",
+          "captures": {"1": {"name": "keyword.other.window.pietto"}, "2": {"name": "keyword.other.window.pietto"}}
+        },
+        {
+          "match": "\\b(respect|ignore)[ \\t]+(nulls)\\b",
+          "captures": {"1": {"name": "keyword.other.window.pietto"}, "2": {"name": "keyword.other.window.pietto"}}
+        },
+        {
+          "match": "(?<=[\\w)\\\"'])[ \\t]+(asc|desc)\\b(?=[ \\t]*(?:[,)#]|$))",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}}
+        },
+        {
+          "match": "\\b(as)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.other.clause.pietto"}, "2": {"name": "variable.other.pietto"}}
+        },
+        {
+          "match": "(?<!\\.)\\b([A-Za-z_][A-Za-z_0-9]*)[ \\t]*(=)(?!=)",
+          "captures": {"1": {"name": "variable.other.pietto"}, "2": {"name": "keyword.operator.assignment.pietto"}}
+        },
+        {
+          "match": "(\\.)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)(?=[ \\t]*\\()",
+          "captures": {"1": {"name": "punctuation.accessor.pietto"}, "2": {"name": "entity.name.function.pietto"}}
+        },
+        {
+          "match": "(\\.)[ \\t]*([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "punctuation.accessor.pietto"}, "2": {"name": "variable.other.member.pietto"}}
+        },
+        {"match": "\\b(?:None|True|False|true|false|null)\\b", "name": "constant.language.pietto"},
+        {"match": "\\b(?:and|or|not)\\b", "name": "keyword.operator.logical.pietto"},
+        {"match": "\\b(?:is|in)\\b(?![ \\t]*(?:=(?!=)|[,:)]))", "name": "keyword.operator.logical.pietto"},
+        {"match": "\\b(?:between|like)\\b", "name": "keyword.operator.word.pietto"},
+        {"match": "\\b(?:if|else|for)\\b(?![ \\t]*(?:=(?!=)|[,:)]))", "name": "keyword.control.flow.pietto"},
+        {
+          "match": "\\b(?:exists|scalar|collect)(?=[ \\t]+[A-Za-z_][A-Za-z_0-9]*)",
+          "name": "keyword.operator.word.pietto"
+        },
+        {"include": "#builtin-type"},
+        {"include": "#builtin-function"},
+        {"include": "#builtin-aggregate"},
+        {"include": "#builtin-window-function"},
+        {"match": "\\b[A-Za-z_][A-Za-z_0-9]*(?=[ \\t]*\\()", "name": "entity.name.function.pietto"},
+        {"match": "\\bself\\b", "name": "variable.language.self.pietto"},
+        {"match": "\\b[A-Za-z_][A-Za-z_0-9]*\\b"},
+        {"include": "#operator"},
+        {"include": "#punctuation"}
+      ]
+    },
+    "cast": {
+      "begin": "\\b(cast)[ \\t]*(\\()",
+      "beginCaptures": {"1": {"name": "keyword.operator.word.pietto"}, "2": {"name": "punctuation.parenthesis.begin.pietto"}},
+      "end": "\\)",
+      "endCaptures": {"0": {"name": "punctuation.parenthesis.end.pietto"}},
+      "patterns": [
+        {
+          "match": "\\b(as)[ \\t]+([A-Za-z_][A-Za-z_0-9]*)",
+          "captures": {"1": {"name": "keyword.operator.word.pietto"}, "2": {"patterns": [{"include": "#type-name"}]}}
+        },
+        {"include": "#type-suffix"},
+        {"include": "#expression"}
+      ]
+    },
+    "operator": {
+      "patterns": [
+        {"match": "->", "name": "keyword.operator.arrow.pietto"},
+        {"match": "==|!=|<=|>=|<|>", "name": "keyword.operator.comparison.pietto"},
+        {"match": "=", "name": "keyword.operator.assignment.pietto"},
+        {"match": "[-+*/%]", "name": "keyword.operator.arithmetic.pietto"},
+        {"match": "\\|", "name": "keyword.operator.type.pietto"}
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {"match": ",", "name": "punctuation.separator.comma.pietto"},
+        {"match": ":", "name": "punctuation.separator.colon.pietto"},
+        {"match": "\\(", "name": "punctuation.parenthesis.begin.pietto"},
+        {"match": "\\)", "name": "punctuation.parenthesis.end.pietto"},
+        {"match": "\\.", "name": "punctuation.accessor.pietto"},
+        {"match": "[{}]", "name": "invalid.illegal.brace.pietto"}
       ]
     }
   }

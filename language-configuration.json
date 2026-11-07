@@ -7,7 +7,13 @@
     { "open": "'", "close": "'", "notIn": ["string", "comment"] }
   ],
   "surroundingPairs": [ ["(", ")"], ["\"", "\""], ["'", "'"] ],
-  "indentationRules": { "increaseIndentPattern": "^\\s*(?!#).*:\\s*(?:#.*)?$" },
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*[^\\s#][^#]*[:(]\\s*(?:#.*)?$",
+    "decreaseIndentPattern": "^\\s*\\)"
+  },
+  "onEnterRules": [
+    { "beforeText": "^\\s+return\\b(?![^#]*\\(\\s*(?:#.*)?$)", "action": { "indent": "outdent" } }
+  ],
   "folding": { "offSide": true },
-  "wordPattern": "[A-Za-z_][A-Za-z_0-9]*"
+  "wordPattern": "[0-9](?:_?[0-9])*(?:\\.[0-9](?:_?[0-9])*)?|[A-Za-z_][A-Za-z_0-9]*"
 }
