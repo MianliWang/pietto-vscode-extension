@@ -12,6 +12,7 @@ export async function run(): Promise<void> {
   const report = vscode.Uri.file(path.join(project, 'models', 'report.pietto'));
   const users = vscode.Uri.file(path.join(project, 'models', 'users.pietto'));
   const outside = vscode.Uri.file(path.join(workspace, 'loose', 'outside.pietto'));
+  const preview = vscode.Uri.file(path.join(workspace, 'loose', 'preview.pietto'));
   const extension = vscode.extensions.getExtension<Api>('MianliWang.pietto-vscode-extension');
   assert.ok(extension, 'The real editor host must discover the Pietto extension.');
   if (installedPath) assert.equal(path.resolve(extension.extensionPath), path.resolve(installedPath), 'The installed VSIX, not the source tree, is under test.');
@@ -122,6 +123,32 @@ export async function run(): Promise<void> {
     assert.equal(item.code, 'PIE-S2301');
     assert.equal(item.message, 'Unknown relation: nowhere');
     assert.deepEqual(span(item.range), [1, 4, 1, 16]);
+  });
+
+  await step('Preview PostgreSQL SQL reads a saved single file and opens only its emitted SQL', async () => {
+    const document = await vscode.workspace.openTextDocument(preview);
+    await vscode.window.showTextDocument(document);
+    await vscode.commands.executeCommand('pietto.previewPostgresSql');
+    const result = await waitFor('a PostgreSQL SQL preview document', () => {
+      const current = vscode.window.activeTextEditor?.document;
+      return current?.uri.scheme === 'pietto-sql-preview' && current;
+    });
+    assert.match(result.getText(), /^SELECT\b/);
+    assert.doesNotMatch(result.getText(), /PIE-/);
+    assert.equal(readFileSync(preview.fsPath, 'utf8'), document.getText(), 'Preview did not write the source file.');
+    return {scheme: result.uri.scheme, preview: result.getText()};
+  });
+
+  await step('Preview PostgreSQL SQL refuses a dirty document without replacing it', async () => {
+    const document = await vscode.workspace.openTextDocument(preview);
+    await vscode.window.showTextDocument(document);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(preview, new vscode.Position(0, 0), '# unsaved\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await vscode.commands.executeCommand('pietto.previewPostgresSql');
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), preview.toString());
+    assert.equal(document.isDirty, true);
+    await vscode.commands.executeCommand('workbench.action.files.revert');
   });
 
   await step('an interpreter without pietto: one actionable message, no server process, no restart loop', async () => {

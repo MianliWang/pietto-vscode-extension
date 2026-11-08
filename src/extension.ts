@@ -4,6 +4,7 @@ import {ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {LanguageClient} from 'vscode-languageclient/node';
 import {fromWsl, isWslLauncher, probe, resolveRoots, serverArguments, strings, toWsl} from './launch';
+import {previewPostgresSql, showIfCurrent, SqlArtifact} from './preview';
 
 let client: LanguageClient | undefined;
 let server: ChildProcess | undefined;
@@ -20,6 +21,9 @@ export function activate(context: vscode.ExtensionContext) {
   const notices: string[] = [];
   let pythonOverride: string | undefined;
   let queue = Promise.resolve();
+  let previewEpoch = 0;
+  let previewRequest = 0;
+  const previews = new Map<string, string>();
   const notify = (notice: string) => {
     notices.push(notice);
     output.appendLine(notice);
@@ -63,13 +67,60 @@ export function activate(context: vscode.ExtensionContext) {
     if (!answered) notify(`Pietto diagnostics are not running: "pietto lsp" from "${python}" has not answered within 30 seconds. Run "Pietto: Restart Language Server" to replace it.`);
   };
   const restart = () => (queue = queue.then(start).catch(error => output.appendLine(`Pietto language server: ${error}`)));
-  context.subscriptions.push(output,
+  const previewProvider = vscode.workspace.registerTextDocumentContentProvider('pietto-sql-preview', {
+    provideTextDocumentContent: uri => previews.get(uri.toString()),
+  });
+  const currentPreview = (document: vscode.TextDocument, version: number, epoch: number, request: number) =>
+    previewEpoch === epoch
+    && previewRequest === request
+    && document.version === version
+    && !document.isDirty
+    && vscode.workspace.textDocuments.includes(document);
+  const openPreview = async (document: vscode.TextDocument, artifact: SqlArtifact, ordinal: number, version: number, epoch: number, request: number) => {
+    const uri = vscode.Uri.from({scheme: 'pietto-sql-preview', path: `/${path.basename(document.uri.fsPath)}.${ordinal + 1}.postgres.sql`, query: String(request)});
+    previews.set(uri.toString(), artifact.sql);
+    if (!await showIfCurrent(
+      () => vscode.workspace.openTextDocument(uri),
+      () => currentPreview(document, version, epoch, request),
+      preview => vscode.window.showTextDocument(preview, {preview: true}),
+    )) previews.delete(uri.toString());
+  };
+  const preview = async () => {
+    if (!vscode.workspace.isTrusted) { void vscode.window.showInformationMessage('Trust this workspace before previewing Pietto SQL.'); return; }
+    const document = vscode.window.activeTextEditor?.document;
+    if (!document || document.languageId !== 'pietto' || document.uri.scheme !== 'file') { void vscode.window.showInformationMessage('Open a saved Pietto file before previewing PostgreSQL SQL.'); return; }
+    if (document.isDirty) { void vscode.window.showInformationMessage('Save this Pietto file before previewing PostgreSQL SQL.'); return; }
+    const config = vscode.workspace.getConfiguration('pietto');
+    const python = pythonOverride ?? config.get<string>('pythonPath', 'python');
+    const launcher = strings(config.get('pythonArguments'));
+    const wsl = isWslLauncher(python);
+    const source = wsl ? toWsl(document.uri.fsPath) : document.uri.fsPath;
+    const version = document.version;
+    const epoch = previewEpoch;
+    const request = ++previewRequest;
+    const result = await vscode.window.withProgress({location: vscode.ProgressLocation.Notification, title: 'Pietto: Previewing PostgreSQL SQL', cancellable: true}, (_, token) => previewPostgresSql(python, launcher, [source], token));
+    if (result.status === 'cancelled' || !currentPreview(document, version, epoch, request)) return;
+    if (result.status === 'failed' || result.status === 'refused') { void vscode.window.showErrorMessage(result.message); return; }
+    if (!result.artifacts.length) { void vscode.window.showInformationMessage('Pietto emitted no PostgreSQL SQL for this file.'); return; }
+    let ordinal = 0;
+    if (result.artifacts.length > 1) {
+      const selected = await vscode.window.showQuickPick(result.artifacts.map((artifact, index) => ({label: `${index + 1}. ${artifact.kind} ${artifact.name}`, description: `${artifact.sql.length} characters`, index})), {title: 'Choose PostgreSQL SQL artifact'});
+      if (!selected || !currentPreview(document, version, epoch, request)) return;
+      ordinal = selected.index;
+    }
+    if (currentPreview(document, version, epoch, request)) await openPreview(document, result.artifacts[ordinal], ordinal, version, epoch, request);
+  };
+  context.subscriptions.push(output, previewProvider,
+    vscode.workspace.onDidCloseTextDocument(document => {
+      if (document.uri.scheme === 'pietto-sql-preview') previews.delete(document.uri.toString());
+    }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (['pythonPath', 'pythonArguments', 'projectRoots'].some(name => event.affectsConfiguration(`pietto.${name}`))) void restart();
+      if (['pythonPath', 'pythonArguments', 'projectRoots'].some(name => event.affectsConfiguration(`pietto.${name}`))) { previewEpoch++; void restart(); }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void restart()),
     vscode.workspace.onDidGrantWorkspaceTrust(() => void restart()),
     vscode.commands.registerCommand('pietto.restart', restart),
+    vscode.commands.registerCommand('pietto.previewPostgresSql', preview),
     vscode.commands.registerCommand('pietto.selectPython', async () => {
       if (!vscode.workspace.isTrusted) { await vscode.window.showInformationMessage('Trust this workspace before selecting an interpreter for Pietto diagnostics.'); return; }
       const value = await vscode.window.showInputBox({title: 'Pietto Python Interpreter', prompt: 'Python executable that has pietto 0.1.10 or later installed',

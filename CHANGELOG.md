@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (candidate)
+
+- **Pietto: Preview PostgreSQL SQL (Single File)** opens one PostgreSQL SQL
+  artifact for a saved, unchanged `.pietto` file. It invokes the public
+  `pietto emit-sql` command through the selected interpreter and never executes
+  SQL or writes the source file.
+
 ## 0.2.1 (2026-11-07)
 
 - An extension and Marketplace icon again, now the Pietto icon of the Pietto

@@ -32,7 +32,7 @@ py -3.12 -m venv $HOME\.venvs\pietto
 Install **Pietto** (`MianliWang.pietto-vscode-extension`) from the Visual
 Studio Marketplace. To run a local build instead, build the VSIX (see
 [Develop and verify](#develop-and-verify)) and install
-`artifacts/pietto-vscode-extension-0.2.1.vsix` with **Extensions: Install from
+`artifacts/pietto-vscode-extension-0.3.0.vsix` with **Extensions: Install from
 VSIX…**.
 
 ## Select the interpreter
@@ -121,8 +121,16 @@ of the file:
 | Two selected files differ only in letter case | `This file is selected under two names that differ only in letter case: <name 1> and <name 2>. Rename one of them.` |
 | The editor sent a partial change | `Pietto needs whole-document changes; reopen this file.` |
 
-Only diagnostics are provided: no hover, completion, go to definition, outline,
-formatting or SQL. Run one Pietto diagnostics source per file; if another tool
+Use **Pietto: Preview PostgreSQL SQL (Single File)** on a saved, unchanged
+`.pietto` file to open one emitted PostgreSQL SQL artifact in a read-only editor.
+The command runs `pietto emit-sql FILE --dialect postgres --format json` through
+the selected interpreter. It never saves the file, executes SQL, selects a
+project root or reads an unsaved buffer. If a file emits several artifacts, it
+asks which one to open in compiler order. A refusal shows Pietto's diagnostics
+and opens no SQL document.
+
+Only diagnostics and PostgreSQL SQL preview are provided: no hover, completion,
+go to definition, outline or formatting. Run one Pietto diagnostics source per file; if another tool
 already runs `pietto check` on save, turn it off.
 
 ## Restricted Mode
@@ -227,7 +235,7 @@ The host tests download VS Code stable once into `.vscode-test/` (or use
 the extension against the real `pietto lsp`; on Linux they need a display
 (`DISPLAY`, WSLg or `xvfb-run`). Their process checks read `/proc`, so on
 other systems they print a `SKIP` line instead. `npm run package` writes
-`artifacts/pietto-vscode-extension-0.2.1.vsix`, and `npm run test:vsix` installs it into an
+`artifacts/pietto-vscode-extension-0.3.0.vsix`, and `npm run test:vsix` installs it into an
 isolated profile and runs the host tests against it. Press F5 for an isolated
 development host. See [verification](docs/verification.md) and
 [architecture](docs/architecture.md).

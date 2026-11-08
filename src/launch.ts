@@ -8,6 +8,12 @@ const entryPoint = (argv: string[]) => ['-I', '-c', `import sys; from pietto.cli
 export const serverArguments = (launcher: string[]) => [...launcher, ...entryPoint(['lsp'])];
 export const probeArguments = (launcher: string[]) => [...launcher, ...entryPoint(['lsp', '--help'])];
 
+// Commands with document paths must pass their arguments separately. Embedding those paths
+// in the Python program would make a quote in a filename change the program itself.
+const commandEntryPoint = ['-I', '-c', 'import sys; from pietto.cli import main; sys.exit(main(sys.argv[1:]))'];
+export const commandArguments = (launcher: string[], argv: string[]) => [...launcher, ...commandEntryPoint, ...argv];
+export const previewArguments = (launcher: string[], source: string[]) => commandArguments(launcher, ['emit-sql', ...source, '--dialect', 'postgres', '--format', 'json']);
+
 // Settings arrive unchecked (VS Code only warns about a value that breaks the schema),
 // so a list setting keeps its strings and anything else counts as empty.
 export const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];

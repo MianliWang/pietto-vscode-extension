@@ -12,6 +12,7 @@ const fixture: Record<string, string> = {
   'project/models/users.pietto': 'shape User:\n    id: Int\n    email: Text | None\n\nsource users: User = postgres.table("public.users")\n\nexport (\n    shape User,\n    source users)\n',
   'project/models/report.pietto': 'from "models/users.pietto" import (\n    source users)\n\nquery emails:\n    from users\n    select:\n        id\n        emial\n',
   'loose/outside.pietto': 'from "models/users.pietto" import (\n    source users)\n\nquery emails:\n    from users\n    select:\n        id\n',
+  'loose/preview.pietto': 'shape Item:\n    id: Int\n\nsource items: Item = postgres.table("public.items")\n\nquery item_ids:\n    from items\n    select:\n        id\n',
 };
 
 async function main() {

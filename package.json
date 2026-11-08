@@ -2,7 +2,7 @@
   "name": "pietto-vscode-extension",
   "displayName": "Pietto",
   "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "MianliWang",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -96,6 +96,10 @@
       {
         "command": "pietto.restart",
         "title": "Pietto: Restart Language Server"
+      },
+      {
+        "command": "pietto.previewPostgresSql",
+        "title": "Pietto: Preview PostgreSQL SQL (Single File)"
       }
     ],
     "configuration": {

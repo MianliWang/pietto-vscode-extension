@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {test} from 'node:test';
-import {fromWsl, isWslLauncher, probe, probeArguments, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
+import {commandArguments, fromWsl, isWslLauncher, previewArguments, probe, probeArguments, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
+import {parsePreview, showIfCurrent} from '../src/preview';
 import {python, pythonArguments} from './editor';
 
 test('the server runs the pietto console entry point in isolated mode after the launcher arguments', () => {
@@ -12,6 +13,46 @@ test('the server runs the pietto console entry point in isolated mode after the 
   assert.match(probeArguments([]).at(-1)!, /main\(\['lsp', '--help'\]\)/);
   // The script carries no double quote, dollar sign, backtick or backslash for a shell to rewrite.
   assert.doesNotMatch(serverArguments([]).at(-1)!, /["$`\\]/);
+});
+
+test('SQL preview passes a filename as an argument, never as Python source', () => {
+  const source = "/work/it's a query.pietto";
+  const args = previewArguments(['-d', 'Ubuntu', '--', '/venv/bin/python'], [source]);
+  assert.deepEqual(args.slice(0, 3), ['-d', 'Ubuntu', '--']);
+  assert.equal(args[args.indexOf('emit-sql') + 1], source);
+  const script = args[args.indexOf('-c') + 1];
+  assert.match(script, /sys\.argv\[1:\]/);
+  assert.doesNotMatch(script, /it's a query/);
+  assert.deepEqual(commandArguments([], ['emit-sql', source]).slice(-2), ['emit-sql', source]);
+});
+
+test('SQL preview accepts only the public PostgreSQL emit-sql v1 envelope and preserves artifact order', () => {
+  const ready = parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: [
+    {kind: 'query', name: 'first', sql: 'SELECT 1'}, {kind: 'table', name: 'second', sql: 'SELECT 2'},
+  ]}));
+  assert.deepEqual(ready, {status: 'ready', artifacts: [{kind: 'query', name: 'first', sql: 'SELECT 1'}, {kind: 'table', name: 'second', sql: 'SELECT 2'}]});
+  assert.deepEqual(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: false, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [{code: 'PIE-B1003', message: 'not admitted'}], cli_errors: [], artifacts: [{kind: 'query', name: 'forbidden', sql: 'SELECT secret'}]})),
+    {status: 'refused', message: 'PIE-B1003: not admitted'});
+  assert.equal(parsePreview('{').status, 'failed');
+  assert.equal(parsePreview(JSON.stringify({schema_version: 2, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
+  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'other.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: []}), 'one.pietto').status, 'failed');
+  assert.deepEqual(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: false, path: null, dialect: 'postgres', output: null, diagnostics: [{code: 'usage', message: 'missing input'}], cli_errors: [], artifacts: []}), 'one.pietto'),
+    {status: 'refused', message: 'usage: missing input'});
+  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
+  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'mysql', output: null, diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
+  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: 'out.sql', diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
+});
+
+test('SQL preview does not show a document that becomes stale while it opens', async () => {
+  let resolve: ((document: string) => void) | undefined;
+  const opening = new Promise<string>(done => { resolve = done; });
+  let current = true;
+  const shown: string[] = [];
+  const result = showIfCurrent(() => opening, () => current, async document => { shown.push(document); });
+  current = false;
+  resolve?.('SQL');
+  assert.equal(await result, false);
+  assert.deepEqual(shown, []);
 });
 
 test('the server script is valid Python', () => {

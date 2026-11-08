@@ -8,6 +8,7 @@ The extension is declarative language support plus one language client.
 | Snippets | `snippets/pietto.json` | no |
 | Comments, brackets, indentation, folding | `language-configuration.json` (folding is VS Code's indentation folding with `folding.offSide`) | no |
 | Diagnostics | `pietto lsp`, through `vscode-languageclient` | yes |
+| PostgreSQL SQL preview | `pietto emit-sql FILE --dialect postgres --format json` | yes |
 
 ## Grammar and snippets
 
@@ -86,6 +87,22 @@ The server re-reads a project root only on a document event inside it, so
 the README asks for **Pietto: Restart Language Server** after an edit of
 `pietto.toml` or of modules outside the editor.
 
+## PostgreSQL SQL preview
+
+**Pietto: Preview PostgreSQL SQL (Single File)** accepts only a saved,
+unchanged file document. It runs the selected interpreter with `-I` and the
+public `emit-sql` command in a separate argv array, rather than embedding the
+file path in Python code. On Windows with a `wsl.exe` launcher, the file path
+uses the existing `/mnt` conversion. The response must be a matching CLI JSON
+v1 `emit-sql` envelope for that exact input path. A refusal, an unexpected
+stderr stream, invalid JSON, timeout, cancellation, document edit/close,
+configuration change, or superseding preview opens no result.
+
+The virtual document holds the exact SQL of one artifact. Multiple artifacts
+are offered in compiler order. The preview never writes the source file,
+executes SQL, formats a buffer, selects a project root, or calls private core
+APIs.
+
 ## Windows desktop with a WSL interpreter
 
 When `pietto.pythonPath` is `wsl.exe` on Windows, `src/launch.ts` maps drive
@@ -103,7 +120,7 @@ Highlighting, snippets and folding work.
 
 ## What the extension does not do
 
-No hover, completion, definition, outline, formatter, SQL, tree views,
+No hover, completion, definition, outline, formatter, tree views,
 connection configuration, telemetry, source upload or automatic installation.
 The adapter of 0.1.0 and 0.1.1 that provided hover, completion, definition,
 outline and the model and connection views imported private Pietto modules, so
