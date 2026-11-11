@@ -11,6 +11,7 @@ The extension is declarative language support plus one language client.
 | Hover, definition and document symbols | Standard LSP from `pietto lsp`, through `vscode-languageclient` | yes |
 | Single-file SQL preview | `pietto emit-sql FILE --dialect {postgres,mysql} --format json` | yes |
 | Project SQL preview | `pietto emit-sql --project ROOT --all --module MODULE --dialect {postgres,mysql} --emission-contract FILE --format json` | yes |
+| Quick fixes | `src/actions.ts` on the public diagnostic codes `PIE-S2708` and `PIE-P1000`; the migration preview runs `pietto migrate FILE` | yes |
 
 ## Grammar and snippets
 
@@ -59,13 +60,18 @@ install script.
 - Initialization: `{"projectRoots": [...]}`. Each workspace folder's
   `pietto.projectRoots` entries resolve against that folder; duplicates are
   dropped (the server refuses them), and the first spelling is kept.
-- Restarts: a change of `pietto.pythonPath`, `pietto.pythonArguments` or
-  `pietto.projectRoots`, a change of workspace folders, granting trust, and
-  **Pietto: Restart Language Server** stop the client and start a new one.
-  Restarts run one at a time, and each waits at most 30 s for the server to
-  answer `initialize`, so a server that never answers cannot hold back the
-  next restart. Stopping sends `shutdown` and `exit`, then kills the process
-  if it is still there.
+- Restarts: a change of any `pietto.*` setting (`pietto.pythonPath`,
+  `pietto.pythonArguments`, `pietto.projectRoots`, and also the preview
+  settings `pietto.sqlDialect` and `pietto.emissionContract`), a
+  `pietto.toml` created, changed or deleted under a selected root, a change
+  of workspace folders, granting trust, and **Pietto: Restart Language
+  Server** stop the client and
+  start a new one. The settings and `pietto.toml` triggers are debounced: one
+  restart runs 500 ms after the last of a burst, and the other triggers run
+  at once and drop a pending one. Restarts run one at a time, and each waits
+  at most 30 s for the server to answer `initialize`, so a server that never
+  answers cannot hold back the next restart. Stopping sends `shutdown` and
+  `exit`, then kills the process if it is still there.
 - Settings are read defensively: a list setting that holds anything but a list
   counts as empty, and only its strings are used.
 
@@ -85,9 +91,15 @@ well and is replaced by the next restart. A server that exits after a
 successful start is restarted by the client's default handler, at most four
 times in three minutes.
 
-The server re-reads a project root only on a document event inside it, so
-the README asks for **Pietto: Restart Language Server** after an edit of
-`pietto.toml` or of modules outside the editor.
+The server re-reads a project root only on a document event inside it and
+does not watch the disk. Each start therefore creates one file system watcher
+per resolved root, `RelativePattern(root, '**/pietto.toml')`, so roots outside
+the workspace folders are watched too; its create, change and delete events
+schedule the debounced restart, and stopping disposes the watchers. A start
+that the probe refuses creates none, so no restart loop follows. Modules
+changed outside the editor are not watched, so the README asks for **Pietto:
+Restart Language Server** after such a change; a core watched-files contract
+is a later decision.
 
 ## Editor navigation
 
@@ -116,10 +128,11 @@ conversion. The dialect is a command argument `{"dialect": ...}`, else the
 resource setting `pietto.sqlDialect` (`postgres` or `mysql`); **Pietto:
 Preview PostgreSQL SQL (Single File)** fixes it to `postgres`. An unexpected
 stderr stream, invalid JSON, a response other than the expected one, timeout,
-cancellation, document edit or close, interpreter or project root change, or
-a superseding preview opens no result. Parsers read only the fields they show
-and ignore the others, so an additive Pietto field changes nothing; an unknown
-`schema_version` or `format` is refused.
+cancellation, document edit or close, `pietto.*` setting change, or a
+superseding preview opens no result. An interpreter that cannot be started at
+all gives an error message with Node's cause. Parsers read only the fields
+they show and ignore the others, so an additive Pietto field changes nothing;
+an unknown `schema_version` or `format` is refused.
 
 Single file: `emit-sql FILE --dialect DIALECT --format json` (CLI JSON v1).
 The response must be a v1 `emit-sql` envelope of that dialect for that exact
@@ -162,6 +175,42 @@ Every virtual document is read-only and holds exactly one artifact's SQL or
 one report. The previews never write a source file, execute SQL, format a
 buffer, choose a project root or contract, or call private core APIs.
 
+## Quick fixes
+
+One code action provider for `pietto` documents of the `file` scheme (an
+untitled buffer has no project root and no file to migrate) maps the
+diagnostics in the requested range to quick fixes in `src/actions.ts`. It reads
+only the public diagnostic fields: `source` `pietto`, the `PIE-` code and, for
+`PIE-S2708`, the severity, which the diagnostics contract fixes as a Warning
+outside a project and an Error in a `schema_version = 1` project, where the fix
+is `schema_version = 2` rather than a root. It never reads a message, so an
+editor-only message, which has no code, gets no action. All diagnostics of one
+fix share one action.
+
+- `PIE-S2708` (Warning): **Select project root** runs the existing
+  `pietto.selectProject` command without a target, so the person picks the
+  folder and the command writes `pietto.projectRoots`; the settings change
+  restarts the server. A file inside a selected root that its `[sources]`
+  leaves out gets the same Warning, but choosing that root again writes the
+  same value and changes nothing; the README sends that case to `pietto.toml`.
+- `PIE-P1000`: **Preview migration (pietto migrate)** runs the internal
+  `pietto.previewMigration` command with the document URI. It needs Workspace
+  Trust and a saved, unchanged file document, and runs `pietto migrate FILE`
+  through the selected interpreter with `-I` and the path as a separate
+  argument (mapped to `/mnt` for a `wsl.exe` launcher), with the 30 s and
+  4 MiB limits of the single-file SQL preview. `PIE-P1000` is every syntax error, not only
+  a retired spelling; for an ordinary one `migrate` fails with the same
+  diagnostic. Offering the fix only for retired spellings would need a
+  structured core marker, not the message. `migrate` has no JSON form: only
+  exit 0 with empty stderr counts as a migration, and its stdout is then the
+  whole source; any other exit shows stderr in an error message and never
+  stdout. The result opens in `vscode.diff` against the file itself; the
+  migrated side is a `pietto-migration-preview` virtual document, read-only,
+  with a leading BOM left out as VS Code leaves it out of the file's side. A
+  document edit or close, a settings change or a newer SQL or migration
+  preview while it runs opens nothing. The command writes no file and applies
+  no edit.
+
 ## Windows desktop with a WSL interpreter
 
 When `pietto.pythonPath` is `wsl.exe` on Windows, `src/launch.ts` maps drive
@@ -180,8 +229,11 @@ Highlighting, snippets and folding work.
 ## What the extension does not do
 
 No completion, formatter, tree views, connection configuration, telemetry,
-source upload or automatic installation. The adapter of 0.1.0 and 0.1.1 that
-provided broader hover, completion, definition, outline and the model and
-connection views imported private Pietto modules, so it remains removed. The
-current standard-LSP navigation uses only the public core contract and does not
-restore those views or broader binding categories.
+source upload, automatic installation, or quick fix that edits a Pietto file
+or applies a text edit; the one quick fix that writes anything, **Select
+project root**, writes only the `pietto.projectRoots` setting of the folder
+you pick. The adapter of 0.1.0 and 0.1.1 that provided broader hover,
+completion, definition, outline and the model and connection views imported
+private Pietto modules, so it remains removed. The current standard-LSP navigation uses only
+the public core contract and does not restore those views or broader binding
+categories.

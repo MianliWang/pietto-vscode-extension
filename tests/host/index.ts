@@ -17,6 +17,8 @@ export async function run(): Promise<void> {
   const mysqlPreview = vscode.Uri.file(path.join(workspace, 'loose', 'preview-mysql.pietto'));
   const items = vscode.Uri.file(path.join(workspace, 'emit', 'models', 'items.pietto'));
   const blocked = vscode.Uri.file(path.join(workspace, 'emit', 'models', 'blocked.pietto'));
+  const legacy = vscode.Uri.file(path.join(workspace, 'loose', 'legacy.pietto'));
+  const manual = vscode.Uri.file(path.join(workspace, 'loose', 'manual.pietto'));
   const extension = vscode.extensions.getExtension<Api>('MianliWang.pietto-vscode-extension');
   assert.ok(extension, 'The real editor host must discover the Pietto extension.');
   if (installedPath) assert.equal(path.resolve(extension.extensionPath), path.resolve(installedPath), 'The installed VSIX, not the source tree, is under test.');
@@ -49,6 +51,17 @@ export async function run(): Promise<void> {
     const found = servers();
     return found === undefined ? {pid: -1, argv: []} : found.length === 1 && found[0].argv.includes('-I') && found[0];
   });
+  // The Pietto quick fixes VS Code offers for a range (default: the whole document), as the
+  // lightbulb lists them; the editor's built-in chat actions are left out.
+  const fixes = async (uri: vscode.Uri, range?: vscode.Range) => {
+    const document = await vscode.workspace.openTextDocument(uri);
+    const found = await vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', uri, range ?? new vscode.Range(0, 0, document.lineCount, 0), vscode.CodeActionKind.QuickFix.value);
+    return (found ?? []).filter(action => action.command?.command.startsWith('pietto.'));
+  };
+  const described = (actions: vscode.CodeAction[]) => actions.map(action => ({title: action.title, kind: action.kind?.value, command: action.command?.command,
+    arguments: (action.command?.arguments ?? []).map(String)}));
+  const diffs = (original: vscode.Uri) => vscode.window.tabGroups.all.flatMap(group => group.tabs)
+    .filter(tab => tab.input instanceof vscode.TabInputTextDiff && tab.input.original.toString() === original.toString());
 
   let error: vscode.Range | undefined;
   await step('project root: pietto lsp reports PIE-S2102 for an unknown field in an open module', async () => {
@@ -136,6 +149,30 @@ export async function run(): Promise<void> {
     return {names: symbols.map(item => item.name)};
   });
 
+  await step('a pietto.toml edited on disk under the root restarts pietto lsp, which reads the new selection', async () => {
+    const toml = path.join(project, 'pietto.toml');
+    const original = readFileSync(toml, 'utf8');
+    const document = await vscode.workspace.openTextDocument(facts);
+    await vscode.window.showTextDocument(document);
+    const typePosition = document.positionAt(document.getText().indexOf('owner: User') + 'owner: '.length);
+    const definitions = async () => (await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeDefinitionProvider', facts, typePosition)) ?? [];
+    const first = await oneServer();
+    writeFileSync(toml, original.replace('include = ["models/*.pietto"]', 'include = ["models/users.pietto"]'));
+    await waitFor('report.pietto checked as a single file once the root leaves it out', () => codes(report).join() === 'PIE-S2301,PIE-S2708');
+    const second = await oneServer();
+    assert.ok(first.pid === -1 || second.pid !== first.pid, 'A new pietto lsp process read the edited pietto.toml.');
+    writeFileSync(toml, original);
+    // A project-only fact, not an empty diagnostic set, shows that the restored root was read.
+    await waitFor('a cross-module definition from facts.pietto again', async () => {
+      const found = await definitions();
+      return found.length === 1 && found[0].uri.toString() === users.toString();
+    });
+    assert.deepEqual(pietto(report), []);
+    const third = await oneServer();
+    assert.ok(third.pid === -1 || third.pid !== second.pid, 'Restoring pietto.toml started another pietto lsp process.');
+    return {servers: [first.pid, second.pid, third.pid]};
+  });
+
   await step('a file outside the project root is checked as a single file (PIE-S2708 at its import)', async () => {
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(outside));
     await waitFor('single-file diagnostics in outside.pietto', () => codes(outside).join() === 'PIE-S2301,PIE-S2708');
@@ -147,6 +184,17 @@ export async function run(): Promise<void> {
     assert.equal(relation.message, 'Unknown relation: users');
     assert.deepEqual(span(relation.range), [4, 4, 4, 14]);
     return pietto(outside).map(item => ({code: item.code, message: item.message, range: span(item.range), severity: item.severity}));
+  });
+
+  await step('the single-file PIE-S2708 Warning offers "Select project root"; PIE-S2301 offers no quick fix', async () => {
+    const [imported, relation] = [...pietto(outside)].sort((a, b) => String(b.code).localeCompare(String(a.code)));
+    assert.equal(imported.code, 'PIE-S2708');
+    const actions = described(await fixes(outside, imported.range));
+    assert.deepEqual(actions, [{title: 'Select project root', kind: 'quickfix', command: 'pietto.selectProject', arguments: []}]);
+    assert.deepEqual(described(await fixes(outside)), actions, 'One action for the whole file.');
+    assert.equal(relation.code, 'PIE-S2301');
+    assert.deepEqual(await fixes(outside, relation.range), [], 'PIE-S2301 alone gets no quick fix.');
+    return actions;
   });
 
   await step('two project roots selecting one file: the editor-only message, without a PIE code, at the file start', async () => {
@@ -163,6 +211,7 @@ export async function run(): Promise<void> {
     }
     await waitFor('outside.pietto still checked as a single file', () => codes(outside).join() === 'PIE-S2301,PIE-S2708');
     await oneServer();
+    assert.deepEqual(await fixes(report), [], 'An editor-only message has no code, so it gets no quick fix.');
     return {message, files: ['project/models/report.pietto (open)', 'project/models/users.pietto (not open)']};
   });
 
@@ -210,6 +259,52 @@ export async function run(): Promise<void> {
     assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), preview.toString());
     assert.equal(document.isDirty, true);
     await vscode.commands.executeCommand('workbench.action.files.revert');
+  });
+
+  await step('PIE-P1000 offers one migration preview: a diff of the saved file and its pietto migrate output, nothing written', async () => {
+    const document = await vscode.workspace.openTextDocument(legacy);
+    await vscode.window.showTextDocument(document);
+    await waitFor('PIE-P1000 at both retired spellings of legacy.pietto', () => codes(legacy).join() === 'PIE-P1000,PIE-P1000');
+    const actions = await fixes(legacy);
+    // Two PIE-P1000 diagnostics, one action.
+    assert.deepEqual(described(actions), [{title: 'Preview migration (pietto migrate)', kind: 'quickfix', command: 'pietto.previewMigration', arguments: [legacy.toString()]}]);
+    const disk = readFileSync(legacy.fsPath, 'utf8');
+    await vscode.commands.executeCommand(actions[0].command!.command, ...actions[0].command!.arguments!);
+    const diff = await waitFor('the migration diff editor', () => {
+      const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+      return input instanceof vscode.TabInputTextDiff && input;
+    });
+    assert.equal(diff.original.toString(), legacy.toString());
+    assert.equal(diff.modified.scheme, 'pietto-migration-preview');
+    const migrated = await vscode.workspace.openTextDocument(diff.modified);
+    assert.equal(migrated.getText(), 'shape User:\n    id: Int\n    email: Text | None\n\nsource users: User = postgres.table("public.users")\n');
+    assert.equal(readFileSync(legacy.fsPath, 'utf8'), disk, 'The migration preview did not write the source file.');
+    assert.equal(document.isDirty, false);
+    assert.equal(migrated.isDirty, false);
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+    return {original: diff.original.toString(), modified: diff.modified.toString(), migrated: migrated.getText()};
+  });
+
+  await step('a migration that pietto migrate refuses, or of a dirty file, opens no diff and writes nothing', async () => {
+    const document = await vscode.workspace.openTextDocument(manual);
+    await vscode.window.showTextDocument(document);
+    await waitFor('PIE-P1000 at the retired header line of manual.pietto', () => codes(manual).join() === 'PIE-P1000');
+    const [action] = await fixes(manual);
+    assert.equal(action?.command?.command, 'pietto.previewMigration');
+    await vscode.commands.executeCommand(action.command!.command, ...action.command!.arguments!);
+    assert.deepEqual(diffs(manual), [], 'A PIE-P1011 refusal opens no diff.');
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), manual.toString());
+    assert.equal(readFileSync(manual.fsPath, 'utf8'), 'mode strict\nshape Legacy:\n    id: Int\n');
+    const dirty = await vscode.workspace.openTextDocument(legacy);
+    await vscode.window.showTextDocument(dirty);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(legacy, new vscode.Position(0, 0), '# unsaved\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await vscode.commands.executeCommand('pietto.previewMigration', legacy);
+    assert.deepEqual(diffs(legacy), [], 'An unsaved buffer is not migrated.');
+    assert.equal(dirty.isDirty, true);
+    await vscode.commands.executeCommand('workbench.action.files.revert');
+    assert.equal(readFileSync(legacy.fsPath, 'utf8').startsWith('shape User:'), true);
   });
 
   // The active editor shows the preview document with this name.

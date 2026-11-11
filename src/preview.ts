@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {Dialect, previewArguments, projectPreviewArguments, ProjectRequest} from './launch';
+import {Dialect, migrateArguments, previewArguments, projectPreviewArguments, ProjectRequest} from './launch';
 
 export const dialectNames: Record<Dialect, string> = {postgres: 'PostgreSQL', mysql: 'MySQL'};
 
@@ -167,38 +167,51 @@ export function parseProjectPreview(stdout: string, exit: number | null, module:
   return aggregate(items) === value.status ? {status: 'ready', items} : unsupported;
 }
 
-type Run = {readonly status: 'done'; readonly exit: number | null; readonly stdout: string} | Stopped;
+type Executed =
+  | {readonly status: 'done'; readonly error: {readonly code?: unknown; readonly message: string} | null; readonly stdout: string; readonly stderr: string}
+  | {readonly status: 'timeout'}
+  | Stopped;
 
-function run(python: string, args: string[], what: string, maxBytes: number, timeoutMs: number, token: Cancellation): Promise<Run> {
+// One pietto command through the selected interpreter, without a shell, within an output
+// limit and a deadline.
+function execute(python: string, args: string[], maxBytes: number, timeoutMs: number, token: Cancellation): Promise<Executed> {
   return new Promise(resolve => {
     const controller = new AbortController();
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     const cancellation = token.onCancellationRequested(() => controller.abort());
-    execFile(python, args, {
-      encoding: 'utf8',
-      maxBuffer: maxBytes,
-      signal: controller.signal,
-      timeout: timeoutMs,
-      windowsHide: true,
-    }, (error, stdout, stderr) => {
+    try {
+      execFile(python, args, {
+        encoding: 'utf8',
+        maxBuffer: maxBytes,
+        signal: controller.signal,
+        timeout: timeoutMs,
+        windowsHide: true,
+      }, (error, stdout, stderr) => {
+        clearTimeout(timeout);
+        cancellation.dispose();
+        resolve(error?.name === 'AbortError' ? {status: timedOut ? 'timeout' : 'cancelled'} : {status: 'done', error, stdout, stderr});
+      });
+    } catch (error) {
+      // An interpreter that cannot be started at all, such as an empty pietto.pythonPath.
       clearTimeout(timeout);
       cancellation.dispose();
-      if (error?.name === 'AbortError') {
-        resolve(timedOut ? {status: 'failed', message: `Pietto ${what} timed out after ${timeoutMs / 1000} seconds.`} : {status: 'cancelled'});
-        return;
-      }
-      if (stderr.trim()) {
-        resolve({status: 'failed', message: `Pietto ${what} wrote unexpected error output: ${stderr.trim()}`});
-        return;
-      }
-      if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-        resolve({status: 'failed', message: `Pietto ${what} wrote more than ${maxBytes / 1024 / 1024} MiB.`});
-        return;
-      }
-      resolve({status: 'done', exit: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout});
-    });
+      resolve({status: 'failed', message: `"${python}" could not be started: ${error instanceof Error ? error.message : String(error)}`});
+    }
   });
+}
+
+type Run = {readonly status: 'done'; readonly exit: number | null; readonly stdout: string} | Stopped;
+
+// emit-sql writes its whole result to stdout, so any error output, or more output than the
+// limit, fails the preview.
+async function run(python: string, args: string[], what: string, maxBytes: number, timeoutMs: number, token: Cancellation): Promise<Run> {
+  const ran = await execute(python, args, maxBytes, timeoutMs, token);
+  if (ran.status === 'timeout') return {status: 'failed', message: `Pietto ${what} timed out after ${timeoutMs / 1000} seconds.`};
+  if (ran.status !== 'done') return ran;
+  if (ran.stderr.trim()) return {status: 'failed', message: `Pietto ${what} wrote unexpected error output: ${ran.stderr.trim()}`};
+  if (ran.error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return {status: 'failed', message: `Pietto ${what} wrote more than ${maxBytes / 1024 / 1024} MiB.`};
+  return {status: 'done', exit: ran.error ? (typeof ran.error.code === 'number' ? ran.error.code : null) : 0, stdout: ran.stdout};
 }
 
 export async function previewSql(python: string, launcher: string[], source: string, dialect: Dialect, token: Cancellation): Promise<PreviewResult> {
@@ -213,6 +226,28 @@ export async function previewSql(python: string, launcher: string[], source: str
 export async function previewProjectSql(python: string, launcher: string[], request: ProjectRequest, token: Cancellation): Promise<ProjectPreviewResult> {
   const ran = await run(python, projectPreviewArguments(launcher, request), 'project SQL preview', 64 * 1024 * 1024, 60_000, token);
   return ran.status === 'done' ? parseProjectPreview(ran.stdout, ran.exit, request.module, request.dialect) : ran;
+}
+
+export type MigrationResult =
+  | {readonly status: 'ready'; readonly source: string}
+  | {readonly status: 'refused'; readonly message: string}
+  | {readonly status: 'failed'; readonly message: string}
+  | {readonly status: 'cancelled'};
+
+// `pietto migrate PATH` has no JSON form. Exit 0 writes one complete migrated source to
+// stdout and nothing to stderr; a refusal (exit 1) or a command error (exit 2) writes its
+// diagnostics to stderr, and any stdout then is never shown.
+export function parseMigration(error: {readonly code?: unknown; readonly message: string} | null, stdout: string, stderr: string): MigrationResult {
+  const errors = stderr.trim();
+  if (!error) return errors ? {status: 'failed', message: `pietto migrate wrote unexpected error output: ${errors}`} : {status: 'ready', source: stdout};
+  if (typeof error.code === 'number' && errors) return {status: 'refused', message: `pietto migrate emitted no source: ${errors}`};
+  return {status: 'failed', message: `pietto migrate did not complete: ${errors || error.message}`};
+}
+
+export async function previewMigration(python: string, launcher: string[], source: string, token: Cancellation): Promise<MigrationResult> {
+  const result = await execute(python, migrateArguments(launcher, source), 4 * 1024 * 1024, 30_000, token);
+  if (result.status === 'timeout') return {status: 'failed', message: 'pietto migrate timed out after 30 seconds.'};
+  return result.status === 'done' ? parseMigration(result.error, result.stdout, result.stderr) : result;
 }
 
 export async function showIfCurrent<T>(open: () => PromiseLike<T>, current: () => boolean, show: (document: T) => PromiseLike<unknown>): Promise<boolean> {

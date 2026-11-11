@@ -50,8 +50,9 @@ The extension then runs, without a shell:
 
 That is the `pietto` console command, run in isolated mode (`-I`), so the
 working directory, user site-packages and `PYTHON*` variables cannot change
-which Pietto runs. Changing `pietto.pythonPath` or `pietto.pythonArguments`
-restarts the server.
+which Pietto runs. Changing `pietto.pythonPath`, `pietto.pythonArguments` or
+any other `pietto.*` setting restarts the server, half a second after the last
+change.
 
 Before it starts the server, the extension runs `pietto lsp --help` the same
 way. If that fails (no pietto, a pietto older than 0.1.10, a wrong path), you
@@ -80,8 +81,11 @@ list to `[]`, so that every open file is checked on its own, as
 `pietto check FILE` does. Changing the roots restarts the server.
 
 The server checks a root again when a Pietto file inside it is opened, edited
-or closed. After you edit `pietto.toml`, or change modules outside the editor
-(for example with `git checkout`), run **Pietto: Restart Language Server**.
+or closed. A `pietto.toml` created, changed or deleted inside a selected root,
+in the editor or outside it, restarts the server half a second after the last
+such change. Modules changed outside the editor (for example by
+`git checkout`) are not watched: run **Pietto: Restart Language Server** after
+such a change.
 
 Open [examples/project](examples/project), select it as the root, and open
 `models/emails.pietto`: it imports from `models/facade.pietto`, which re-exports
@@ -142,8 +146,8 @@ run the public `pietto emit-sql` command through the selected interpreter and
 read only files saved on disk, so they refuse an unsaved buffer. They never
 save or write a source file, execute SQL or connect to a database. A result
 that goes stale while Pietto runs (the file changes or closes, for a project
-preview any file of its root changes or is saved, the interpreter or project
-root settings change, or another preview starts) opens nothing.
+preview any file of its root changes or is saved, a `pietto.*` setting
+changes, or another preview starts) opens nothing.
 
 - **Pietto: Preview SQL (Single File)** runs
   `pietto emit-sql FILE --dialect DIALECT --format json` for the active saved
@@ -187,6 +191,31 @@ settings are per resource, so each workspace folder can have its own:
   "args": {"dialect": "mysql", "emissionContract": "contracts/mysql.json"}
 }
 ```
+
+## Quick fixes
+
+The lightbulb offers two quick fixes. They are chosen by a diagnostic's public
+`PIE-` code (for `PIE-S2708` also its severity), never by its message, so the
+editor-only messages above, which have no code, get none.
+
+- `PIE-S2708`, the Warning at an import or export of a file checked on its
+  own, offers **Select project root**. It runs **Pietto: Select Explicit
+  Project Root**, which writes the folder you choose to `pietto.projectRoots`;
+  nothing is guessed. A file inside a selected root that the root's
+  `[sources]` leaves out gets the same Warning: change `pietto.toml` instead,
+  because choosing that root again changes nothing. A `schema_version = 1`
+  project reports `PIE-S2708` as an Error that asks for `schema_version = 2`
+  instead, and that gets no quick fix.
+- `PIE-P1000`, a syntax error such as a retired spelling, offers **Preview
+  migration (pietto migrate)**. It runs `pietto migrate FILE` on the saved
+  file through the selected interpreter and opens a diff of the file and the
+  migrated source, a read-only document. Nothing is written: to keep the
+  result, run `pietto migrate FILE > FILE.new` yourself. A file with unsaved
+  changes is not migrated; save it first. When `migrate` refuses, for example
+  with `PIE-P1011` (manual migration), an error message shows its diagnostics
+  and no diff opens. Every syntax error is `PIE-P1000`, so the fix is offered
+  for an ordinary typing error too; there `migrate` reports the same
+  `PIE-P1000` and no diff opens.
 
 ## Restricted Mode
 
@@ -306,4 +335,6 @@ development host. See [verification](docs/verification.md) and
   its clause follows on the same line, and a name spelled like an operator
   (`if`, `in`, `desc`) is shown as the operator. Diagnostics are not affected.
 - No query execution, formatter, rename, references, connection testing or
-  database installation.
+  database installation. No quick fix edits a Pietto file or applies a text
+  edit: **Select project root** changes only the `pietto.projectRoots`
+  setting, to the folder you pick.

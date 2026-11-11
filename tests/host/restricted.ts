@@ -25,6 +25,10 @@ export async function run(): Promise<void> {
   await sleep(100);
   assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), file.toString(), 'Restricted Mode does not open SQL preview.');
   assert.deepEqual(servers() ?? [], [], 'Restricted Mode starts no preview process.');
+  await vscode.commands.executeCommand('pietto.previewMigration', file);
+  await sleep(100);
+  assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), file.toString(), 'Restricted Mode does not open a migration preview.');
+  assert.ok(!vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputTextDiff)), 'Restricted Mode opens no diff.');
   assert.deepEqual(api.notices, []);
   assert.ok(!vscode.workspace.getConfiguration('pietto').get<string>('pythonPath')?.includes('workspace-selected-python'), 'The workspace interpreter setting is ignored.');
   const completion = await vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', file, new vscode.Position(document.lineCount - 1, 0));

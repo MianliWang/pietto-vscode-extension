@@ -3,15 +3,21 @@ import * as path from 'node:path';
 import {ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {LanguageClient} from 'vscode-languageclient/node';
-import {Dialect, fromWsl, isDialect, isWslLauncher, probe, projectsOf, resolveRoots, serverArguments, strings, toWsl} from './launch';
-import {dialectNames, previewProjectSql, previewSql, showIfCurrent} from './preview';
+import {quickFixes, quickFixTitles} from './actions';
+import {debounce, Dialect, fromWsl, isDialect, isWslLauncher, probe, projectsOf, resolveRoots, serverArguments, strings, toWsl} from './launch';
+import {dialectNames, previewMigration, previewProjectSql, previewSql, showIfCurrent} from './preview';
 
 let client: LanguageClient | undefined;
 let server: ChildProcess | undefined;
+let watchers: vscode.Disposable[] = [];
+
+const restartDelayMs = 500;
 
 async function stop(): Promise<void> {
-  const [oldClient, oldServer] = [client, server];
+  const [oldClient, oldServer, oldWatchers] = [client, server, watchers];
   client = server = undefined;
+  watchers = [];
+  for (const watcher of oldWatchers) watcher.dispose();
   await oldClient?.dispose().catch(() => undefined); // A client that never started cannot shut down.
   oldServer?.kill();
 }
@@ -33,19 +39,30 @@ export function activate(context: vscode.ExtensionContext) {
     output.appendLine(notice);
     void vscode.window.showErrorMessage(notice);
   };
+  const interpreter = () => {
+    const config = vscode.workspace.getConfiguration('pietto');
+    const python = pythonOverride ?? config.get<string>('pythonPath', 'python');
+    return {python, launcher: strings(config.get('pythonArguments')), wsl: isWslLauncher(python)};
+  };
   const start = async () => {
     await stop();
     if (!vscode.workspace.isTrusted) return;
-    const config = vscode.workspace.getConfiguration('pietto');
-    const python = pythonOverride ?? config.get<string>('pythonPath', 'python');
-    const launcher = strings(config.get('pythonArguments'));
+    const {python, launcher, wsl} = interpreter();
     const failure = await probe(python, launcher);
     if (failure !== undefined) {
       notify(`Pietto diagnostics are off: "${python}" could not run "pietto lsp" (${failure}). Install pietto 0.1.10 or later in that Python environment, or run "Pietto: Select Python Interpreter", then "Pietto: Restart Language Server".`);
       return;
     }
-    const wsl = isWslLauncher(python);
     const roots = configuredRoots();
+    // pietto lsp does not watch the disk and reads a root again only on a document event
+    // inside it, so a pietto.toml created, changed or deleted under a root restarts it.
+    watchers = roots.map(root => {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root), '**/pietto.toml'));
+      watcher.onDidCreate(scheduled.schedule);
+      watcher.onDidChange(scheduled.schedule);
+      watcher.onDidDelete(scheduled.schedule);
+      return watcher;
+    });
     client = new LanguageClient('pietto', 'Pietto', async () => {
       const child = spawn(python, serverArguments(launcher), {windowsHide: true});
       await once(child, 'spawn');
@@ -69,10 +86,14 @@ export function activate(context: vscode.ExtensionContext) {
     const answered = await Promise.race([client.start().then(() => true, () => true), new Promise<false>(resolve => setTimeout(resolve, 30_000, false))]);
     if (!answered) notify(`Pietto diagnostics are not running: "pietto lsp" from "${python}" has not answered within 30 seconds. Run "Pietto: Restart Language Server" to replace it.`);
   };
-  const restart = () => (queue = queue.then(start).catch(error => output.appendLine(`Pietto language server: ${error}`)));
-  const previewProvider = vscode.workspace.registerTextDocumentContentProvider('pietto-sql-preview', {
+  const restart = () => {
+    scheduled.cancel();
+    return (queue = queue.then(start).catch(error => output.appendLine(`Pietto language server: ${error}`)));
+  };
+  const scheduled = debounce(restartDelayMs, () => void restart());
+  const previewProviders = ['pietto-sql-preview', 'pietto-migration-preview'].map(scheme => vscode.workspace.registerTextDocumentContentProvider(scheme, {
     provideTextDocumentContent: uri => previews.get(uri.toString()),
-  });
+  }));
   const currentPreview = (document: vscode.TextDocument, version: number, epoch: number, request: number) =>
     previewEpoch === epoch
     && previewRequest === request
@@ -88,11 +109,6 @@ export function activate(context: vscode.ExtensionContext) {
       current,
       preview => vscode.window.showTextDocument(preview, {preview: true}),
     )) previews.delete(uri.toString());
-  };
-  const interpreter = () => {
-    const config = vscode.workspace.getConfiguration('pietto');
-    const python = pythonOverride ?? config.get<string>('pythonPath', 'python');
-    return {python, launcher: strings(config.get('pythonArguments')), wsl: isWslLauncher(python)};
   };
   // The saved, unchanged Pietto file of the active editor; otherwise the reason goes to the user.
   const savedPietto = (what: string) => {
@@ -181,21 +197,58 @@ export function activate(context: vscode.ExtensionContext) {
   const staleProject = (document: vscode.TextDocument) => {
     if (projectPreview && document.uri.scheme === 'file' && projectsOf(document.uri.fsPath, [projectPreview.root]).length) projectPreview.stale = true;
   };
-  context.subscriptions.push(output, previewProvider,
+  // The PIE-P1000 quick fix: `pietto migrate FILE` of the saved file, shown beside it in a
+  // diff editor whose migrated side is a read-only virtual document. Nothing is written.
+  const migration = async (target?: vscode.Uri) => {
+    if (!vscode.workspace.isTrusted) { void vscode.window.showInformationMessage('Trust this workspace before previewing a Pietto migration.'); return; }
+    const uri = target ?? vscode.window.activeTextEditor?.document.uri;
+    const document = uri && vscode.workspace.textDocuments.find(item => item.uri.toString() === uri.toString());
+    if (!document || document.languageId !== 'pietto' || document.uri.scheme !== 'file') { void vscode.window.showInformationMessage('Open a saved Pietto file before previewing its migration.'); return; }
+    if (document.isDirty) { void vscode.window.showInformationMessage('Save this Pietto file before previewing its migration.'); return; }
+    const {python, launcher, wsl} = interpreter();
+    const source = wsl ? toWsl(document.uri.fsPath) : document.uri.fsPath;
+    const version = document.version;
+    const epoch = previewEpoch;
+    const request = ++previewRequest;
+    const result = await vscode.window.withProgress({location: vscode.ProgressLocation.Notification, title: 'Pietto: Previewing migration', cancellable: true}, (_, token) => previewMigration(python, launcher, source, token));
+    if (result.status === 'cancelled' || !currentPreview(document, version, epoch, request)) return;
+    if (result.status !== 'ready') { void vscode.window.showErrorMessage(result.message); return; }
+    const name = path.basename(document.uri.fsPath);
+    const migrated = vscode.Uri.from({scheme: 'pietto-migration-preview', path: `/${name}`, query: String(request)});
+    // migrate keeps a leading BOM, which VS Code leaves out of the file's own side.
+    previews.set(migrated.toString(), result.source.replace(/^\uFEFF/, ''));
+    if (!await showIfCurrent(
+      () => vscode.workspace.openTextDocument(migrated),
+      () => currentPreview(document, version, epoch, request),
+      () => vscode.commands.executeCommand('vscode.diff', document.uri, migrated, `${name} ↔ pietto migrate (preview)`, {preview: true}),
+    )) previews.delete(migrated.toString());
+  };
+  context.subscriptions.push(output, ...previewProviders, {dispose: scheduled.cancel},
     vscode.workspace.onDidCloseTextDocument(document => {
-      if (document.uri.scheme === 'pietto-sql-preview') previews.delete(document.uri.toString());
+      if (document.uri.scheme === 'pietto-sql-preview' || document.uri.scheme === 'pietto-migration-preview') previews.delete(document.uri.toString());
     }),
     vscode.workspace.onDidChangeTextDocument(event => staleProject(event.document)),
     vscode.workspace.onDidSaveTextDocument(staleProject),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (['pythonPath', 'pythonArguments', 'projectRoots'].some(name => event.affectsConfiguration(`pietto.${name}`))) { previewEpoch++; void restart(); }
+      if (event.affectsConfiguration('pietto')) { previewEpoch++; scheduled.schedule(); }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void restart()),
     vscode.workspace.onDidGrantWorkspaceTrust(() => void restart()),
+    vscode.languages.registerCodeActionsProvider({scheme: 'file', language: 'pietto'}, {
+      provideCodeActions: (document, _range, actionContext) => quickFixes(actionContext.diagnostics, vscode.DiagnosticSeverity.Warning).map(([fix, diagnostics]) => {
+        const action = new vscode.CodeAction(quickFixTitles[fix], vscode.CodeActionKind.QuickFix);
+        action.diagnostics = diagnostics;
+        action.command = fix === 'selectProjectRoot'
+          ? {command: 'pietto.selectProject', title: action.title}
+          : {command: 'pietto.previewMigration', title: action.title, arguments: [document.uri]};
+        return action;
+      }),
+    }, {providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]}),
     vscode.commands.registerCommand('pietto.restart', restart),
     vscode.commands.registerCommand('pietto.previewPostgresSql', () => preview('postgres', undefined)),
     vscode.commands.registerCommand('pietto.previewSql', (options?: unknown) => preview(undefined, options)),
     vscode.commands.registerCommand('pietto.previewProjectSql', (options?: unknown) => previewProject(options)),
+    vscode.commands.registerCommand('pietto.previewMigration', migration),
     vscode.commands.registerCommand('pietto.selectPython', async () => {
       if (!vscode.workspace.isTrusted) { await vscode.window.showInformationMessage('Trust this workspace before selecting an interpreter for Pietto diagnostics.'); return; }
       const value = await vscode.window.showInputBox({title: 'Pietto Python Interpreter', prompt: 'Python executable that has pietto 0.1.10 or later installed',

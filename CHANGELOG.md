@@ -2,6 +2,13 @@
 
 ## 0.4.0 (candidate)
 
+- A compatible Pietto language server supplies standard hover, go to
+  definition and document symbols from its current diagnostic snapshot.
+  Definition covers only exact retained `type` and `from` targets; hover shows
+  retained declaration/type facts and symbols list named top-level
+  declarations. Unknown, ambiguous or stale facts produce no navigation
+  result. This does not restore the removed private Python adapter, completion
+  or the model and connection views.
 - **Pietto: Preview SQL (Single File)** previews MySQL as well as PostgreSQL,
   by the new `pietto.sqlDialect` setting or a `{"dialect": ...}` command
   argument.
@@ -18,6 +25,19 @@
   document is refused. Both previews ignore JSON fields they do not read and
   refuse an unknown document format. Both need pietto 0.1.10, like the
   language server.
+- Quick fixes keyed on public diagnostic codes, never on message text:
+  `PIE-S2708` (the single-file Warning at an import or export) offers
+  **Select project root**, which writes the chosen folder to
+  `pietto.projectRoots`; `PIE-P1000` offers **Preview migration (pietto
+  migrate)**, a diff of the saved file and the output of `pietto migrate FILE`
+  in a read-only document. Nothing is written; an unsaved file or a refusal
+  such as `PIE-P1011` opens no diff.
+- The language server restarts when a `pietto.toml` inside a selected project
+  root is created, changed or deleted, and on a change of any `pietto.*`
+  setting, half a second after the last such change. Modules changed outside
+  the editor still need **Pietto: Restart Language Server**.
+- A preview whose interpreter cannot be started at all, such as an empty
+  `pietto.pythonPath`, shows an error message with the cause.
 
 ## 0.3.0 (candidate)
 
@@ -25,13 +45,6 @@
   artifact for a saved, unchanged `.pietto` file. It invokes the public
   `pietto emit-sql` command through the selected interpreter and never executes
   SQL or writes the source file.
-- A compatible Pietto language server supplies standard hover, go to
-  definition and document symbols from its current diagnostic snapshot.
-  Definition covers only exact retained `type` and `from` targets; hover shows
-  retained declaration/type facts and symbols list named top-level
-  declarations. Unknown, ambiguous or stale facts produce no navigation
-  result. This does not restore the removed private Python adapter, completion
-  or the model and connection views.
 
 ## 0.2.1 (2026-11-07)
 

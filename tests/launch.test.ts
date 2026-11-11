@@ -1,8 +1,91 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {test} from 'node:test';
-import {commandArguments, fromWsl, isWslLauncher, previewArguments, probe, probeArguments, projectPreviewArguments, projectsOf, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
+import {commandArguments, debounce, fromWsl, isWslLauncher, migrateArguments, previewArguments, probe, probeArguments, projectPreviewArguments, projectsOf, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
+import {parseMigration, previewMigration, previewProjectSql, previewSql} from '../src/preview';
 import {python, pythonArguments} from './editor';
+
+const token = {onCancellationRequested: () => ({dispose() {}})};
+
+test('migration preview passes a filename as an argument, never as Python source', () => {
+  const source = "/work/it's old.pietto";
+  const args = migrateArguments(['-d', 'Ubuntu', '--', '/venv/bin/python'], source);
+  assert.deepEqual(args.slice(0, 3), ['-d', 'Ubuntu', '--']);
+  assert.deepEqual(args.slice(-2), ['migrate', source]);
+  assert.doesNotMatch(args[args.indexOf('-c') + 1], /it's old/);
+  assert.ok(args.includes('-I'));
+});
+
+test('migration preview shows stdout only for a clean exit 0 and stderr for a refusal', () => {
+  // The exact migrated bytes, a leading BOM and CRLF line ends included.
+  assert.deepEqual(parseMigration(null, '\uFEFFshape S:\r\n    id: Int\r\n', ''), {status: 'ready', source: '\uFEFFshape S:\r\n    id: Int\r\n'});
+  assert.deepEqual(parseMigration(null, '', ''), {status: 'ready', source: ''});
+  assert.equal(parseMigration(null, 'shape S:\n', 'warning\n').status, 'failed');
+  const refusal = 'old.pietto:1:1 PIE-P1011 error: The header line `mode strict` needs manual migration. No migrated source was emitted.';
+  assert.deepEqual(parseMigration({code: 1, message: 'Command failed'}, 'partial source', `${refusal}\n`), {status: 'refused', message: `pietto migrate emitted no source: ${refusal}`});
+  assert.deepEqual(parseMigration({code: 2, message: 'Command failed'}, '', 'old.pietto: error: No such file or directory (errno 2)\n'),
+    {status: 'refused', message: 'pietto migrate emitted no source: old.pietto: error: No such file or directory (errno 2)'});
+  const failures = [parseMigration({code: 1, message: 'Command failed'}, 'partial source', ''), parseMigration({code: 'ENOENT', message: 'spawn python ENOENT'}, '', ''),
+    parseMigration({code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', message: 'stdout maxBuffer length exceeded'}, 'partial', '')];
+  assert.deepEqual(failures.map(result => result.status), ['failed', 'failed', 'failed']);
+  assert.ok(failures.every(result => result.status === 'failed' && !result.message.includes('partial')));
+});
+
+test('the real pietto migrate migrates retired spelling, refuses a manual case and writes no file', async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'pietto-migrate-'));
+  try {
+    const old = path.join(directory, "it's old.pietto");
+    const oldText = 'shape User:\n    id: Int not null\n    email: Text nullable\n\nsource users: User = postgres.table("public.users")\n';
+    writeFileSync(old, oldText);
+    assert.deepEqual(await previewMigration(python(), pythonArguments(), old, token),
+      {status: 'ready', source: 'shape User:\n    id: Int\n    email: Text | None\n\nsource users: User = postgres.table("public.users")\n'});
+    const manual = path.join(directory, 'manual.pietto');
+    writeFileSync(manual, 'mode strict\nshape Legacy:\n    id: Int\n');
+    const refused = await previewMigration(python(), pythonArguments(), manual, token);
+    assert.equal(refused.status, 'refused');
+    assert.match(refused.status === 'refused' ? refused.message : '', /^pietto migrate emitted no source: .*manual\.pietto:1:1 PIE-P1011 error: The header line `mode strict` needs manual migration/);
+    assert.equal(readFileSync(old, 'utf8'), oldText);
+    assert.equal(readFileSync(manual, 'utf8'), 'mode strict\nshape Legacy:\n    id: Int\n');
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
+});
+
+test('an interpreter that cannot start fails a preview with its cause instead of throwing', async () => {
+  const migration = await previewMigration('', [], 'old.pietto', token);
+  assert.equal(migration.status, 'failed');
+  assert.match(migration.status === 'failed' ? migration.message : '', /^"" could not be started: .*cannot be empty/);
+  for (const result of [await previewSql('', [], 'one.pietto', 'mysql', token), await previewProjectSql('', [], {root: 'project', module: 'one.pietto', dialect: 'postgres', contract: 'contract.json'}, token)]) {
+    assert.equal(result.status, 'failed');
+    assert.match(result.status === 'failed' ? result.message : '', /^"" could not be started: .*cannot be empty/);
+  }
+});
+
+test('a burst of restart triggers runs one restart after the last; cancel drops a pending one', t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  let restarts = 0;
+  const restart = debounce(500, () => restarts++);
+  restart.schedule();
+  t.mock.timers.tick(400);
+  restart.schedule();
+  t.mock.timers.tick(400);
+  restart.schedule();
+  assert.equal(restarts, 0);
+  t.mock.timers.tick(500);
+  assert.equal(restarts, 1);
+  t.mock.timers.tick(5000);
+  assert.equal(restarts, 1);
+  restart.schedule();
+  restart.cancel();
+  t.mock.timers.tick(5000);
+  assert.equal(restarts, 1);
+  restart.schedule();
+  t.mock.timers.tick(500);
+  assert.equal(restarts, 2);
+});
 
 test('the server runs the pietto console entry point in isolated mode after the launcher arguments', () => {
   assert.deepEqual(serverArguments(['-d', 'Ubuntu', '--', '/venv/bin/python']), [

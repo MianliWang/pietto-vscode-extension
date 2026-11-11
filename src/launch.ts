@@ -20,6 +20,15 @@ export const previewArguments = (launcher: string[], source: string[], dialect: 
 export interface ProjectRequest {readonly root: string; readonly module: string; readonly dialect: Dialect; readonly contract: string}
 export const projectPreviewArguments = (launcher: string[], {root, module, dialect, contract}: ProjectRequest) => commandArguments(launcher,
   ['emit-sql', `--project=${root}`, '--all', `--module=${module}`, `--dialect=${dialect}`, `--emission-contract=${contract}`, '--format=json']);
+export const migrateArguments = (launcher: string[], source: string) => commandArguments(launcher, ['migrate', source]);
+
+// Restart triggers come in bursts (a checkout rewriting pietto.toml, a settings file saved
+// with several pietto.* changes), so one restart runs after the last of them.
+export function debounce(delayMs: number, action: () => void): {schedule(): void; cancel(): void} {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => { clearTimeout(timer); timer = undefined; };
+  return {schedule: () => { cancel(); timer = setTimeout(() => { timer = undefined; action(); }, delayMs); }, cancel};
+}
 
 // Settings arrive unchecked (VS Code only warns about a value that breaks the schema),
 // so a list setting keeps its strings and anything else counts as empty.
