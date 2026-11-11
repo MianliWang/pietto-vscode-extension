@@ -6,6 +6,13 @@
   artifact for a saved, unchanged `.pietto` file. It invokes the public
   `pietto emit-sql` command through the selected interpreter and never executes
   SQL or writes the source file.
+- A compatible Pietto language server supplies standard hover, go to
+  definition and document symbols from its current diagnostic snapshot.
+  Definition covers only exact retained `type` and `from` targets; hover shows
+  retained declaration/type facts and symbols list named top-level
+  declarations. Unknown, ambiguous or stale facts produce no navigation
+  result. This does not restore the removed private Python adapter, completion
+  or the model and connection views.
 
 ## 0.2.1 (2026-11-07)
 

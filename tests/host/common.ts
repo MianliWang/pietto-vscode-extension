@@ -27,10 +27,10 @@ export function servers(): {pid: number; argv: string[]}[] | undefined {
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function waitFor<T>(what: string, check: () => T | undefined | null | false, timeout = 30_000): Promise<T> {
+export async function waitFor<T>(what: string, check: () => T | undefined | null | false | Promise<T | undefined | null | false>, timeout = 30_000): Promise<T> {
   const deadline = Date.now() + timeout;
   for (;;) {
-    const value = check();
+    const value = await check();
     if (value) return value;
     if (Date.now() > deadline) throw new Error(`Timed out after ${timeout} ms waiting for ${what}.`);
     await sleep(50);

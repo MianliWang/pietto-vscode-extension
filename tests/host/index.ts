@@ -11,6 +11,7 @@ export async function run(): Promise<void> {
   const project = path.join(workspace, 'project');
   const report = vscode.Uri.file(path.join(project, 'models', 'report.pietto'));
   const users = vscode.Uri.file(path.join(project, 'models', 'users.pietto'));
+  const facts = vscode.Uri.file(path.join(project, 'models', 'facts.pietto'));
   const outside = vscode.Uri.file(path.join(workspace, 'loose', 'outside.pietto'));
   const preview = vscode.Uri.file(path.join(workspace, 'loose', 'preview.pietto'));
   const extension = vscode.extensions.getExtension<Api>('MianliWang.pietto-vscode-extension');
@@ -47,7 +48,7 @@ export async function run(): Promise<void> {
   });
 
   let error: vscode.Range | undefined;
-  await step('project root: pietto lsp reports PIE-S2102 for an unknown field in an open module of a two-module project', async () => {
+  await step('project root: pietto lsp reports PIE-S2102 for an unknown field in an open module', async () => {
     await vscode.commands.executeCommand('pietto.selectProject', vscode.Uri.file(project));
     assert.deepEqual(settings().get('projectRoots'), ['project']);
     const document = await vscode.workspace.openTextDocument(report);
@@ -73,6 +74,63 @@ export async function run(): Promise<void> {
     await waitFor('no diagnostics in report.pietto', () => pietto(report).length === 0);
     assert.equal(readFileSync(report.fsPath, 'utf8'), disk);
     assert.equal(vscode.workspace.textDocuments.find(document => document.uri.toString() === report.toString())?.isDirty, true);
+  });
+
+  await step('real LSP providers return hover, exact cross-module definitions and ordered document symbols', async () => {
+    const document = await vscode.workspace.openTextDocument(facts);
+    await vscode.window.showTextDocument(document);
+    const text = document.getText();
+    const typePosition = document.positionAt(text.indexOf('owner: User') + 'owner: '.length);
+    const fromPosition = document.positionAt(text.indexOf('from users') + 'from '.length);
+    const hovers = await waitFor<vscode.Hover[]>('a real User hover', async () => {
+      const found = await vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', facts, typePosition);
+      return found?.length ? found : false;
+    });
+    assert.equal(hovers.length, 1);
+    assert.ok(hovers[0].range);
+    assert.equal(document.getText(hovers[0].range), 'User');
+    const hoverText = hovers[0].contents.map(item => typeof item === 'string' ? item : item.value).join('\n');
+    assert.equal(hoverText.replaceAll('&nbsp;', ' '), 'shape User');
+    const targets = [];
+    for (const [position, expected] of [[typePosition, [0, 0, 2, 22]], [fromPosition, [4, 0, 4, 51]]] as const) {
+      const locations = await waitFor<vscode.Location[]>('an exact definition target', async () => {
+        const found = await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeDefinitionProvider', facts, position);
+        return found?.length ? found : false;
+      });
+      assert.equal(locations.length, 1);
+      assert.equal(locations[0].uri.toString(), users.toString());
+      assert.deepEqual(span(locations[0].range), expected);
+      targets.push({uri: locations[0].uri.toString(), range: span(locations[0].range)});
+    }
+    const symbols = await waitFor<vscode.DocumentSymbol[]>('ordered document symbols', async () => {
+      const found = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', facts);
+      return found?.length ? found : false;
+    });
+    assert.deepEqual(symbols.map(item => item.name), ['Audit', 'audit_users']);
+    assert.equal(symbols[0].kind, vscode.SymbolKind.Class);
+    assert.deepEqual(symbols.map(item => item.detail), ['shape Audit', 'query audit_users']);
+    assert.deepEqual(pietto(facts), []);
+    return {hover: {text: hoverText.replaceAll('&nbsp;', ' '), range: span(hovers[0].range)}, targets, symbols: symbols.map(item => ({name: item.name, kind: item.kind, range: span(item.range)}))};
+  });
+
+  await step('a document-symbol request sent right after an edit answers once with the edited outline', async () => {
+    const document = await vscode.workspace.openTextDocument(facts);
+    await vscode.window.showTextDocument(document);
+    const end = document.positionAt(document.getText().length);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(facts, end, '\nquery audit_ids:\n    from users\n    select:\n        id\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    // One request and no retry: the server answers it after the edit's analysis.
+    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', facts);
+    assert.deepEqual(symbols?.map(item => item.name), ['Audit', 'audit_users', 'audit_ids']);
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(facts, new vscode.Range(end, document.positionAt(document.getText().length)));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    await waitFor('the original outline after the undo', async () => {
+      const found = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', facts);
+      return found?.length === 2 ? found : false;
+    });
+    return {names: symbols.map(item => item.name)};
   });
 
   await step('a file outside the project root is checked as a single file (PIE-S2708 at its import)', async () => {

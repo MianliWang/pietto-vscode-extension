@@ -129,9 +129,19 @@ project root or reads an unsaved buffer. If a file emits several artifacts, it
 asks which one to open in compiler order. A refusal shows Pietto's diagnostics
 and opens no SQL document.
 
-Only diagnostics and PostgreSQL SQL preview are provided: no hover, completion,
-go to definition, outline or formatting. Run one Pietto diagnostics source per file; if another tool
-already runs `pietto check` on save, turn it off.
+Alongside diagnostics and PostgreSQL SQL preview, a Pietto server that exposes
+the editor-facts v1 contract provides standard hover, go to definition and the
+document outline. They are deliberately narrow: definition is available only
+for exact retained `type` and `from` targets. Hover shows retained declaration
+and type text, including a known builtin type where available, and the outline
+lists named top-level declarations in source order. Fields, lets, parameters,
+function calls, completion and formatting are not covered. A change, close,
+root conflict or failed analysis discards those facts, so VS Code shows no
+navigation result until a current diagnostic analysis provides one. Requests do
+not reparse or compile the document.
+
+Run one Pietto diagnostics source per file; if another tool already runs
+`pietto check` on save, turn it off.
 
 ## Restricted Mode
 
@@ -183,7 +193,9 @@ pietto 0.1.2, by a fingerprint of its source; 0.1.1 was tested with pietto
 0.1.2 and 0.1.3 and tried any other pietto without a guarantee, so a change to
 those private modules could break them. Diagnostics now come from
 `pietto lsp`, a public Pietto contract. The removed features come back when
-Pietto has public contracts for them. Project roots now live in the
+Pietto has public contracts for them. The current standard-LSP hover,
+definition and document outline are separate, exact-fact features; they do not
+restore the removed adapter or its broader navigation. Project roots now live in the
 `pietto.projectRoots` setting; the roots that 0.1.0 and 0.1.1 kept in
 workspace state are not carried over, so run **Pietto: Select Explicit Project
 Root** again.

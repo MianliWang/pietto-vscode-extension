@@ -184,13 +184,18 @@ def blocks(tree: Path):
 
 # Runs in a child interpreter with the tree's src first on sys.path.
 PARSE = r"""
-import json, sys
+import json, re, sys
 sys.path.insert(0, sys.argv[1])
-from antlr4 import InputStream
+from antlr4 import CommonTokenStream, InputStream
+from antlr4.atn.LexerATNSimulator import LexerATNSimulator
+from antlr4.ListTokenSource import ListTokenSource
+from antlr4.PredictionContext import PredictionContextCache
+from antlr4.Token import Token
 from antlr4.tree.Tree import TerminalNode
 from pietto.generated.PiettoLexer import PiettoLexer
 from pietto.generated.PiettoParser import PiettoParser
-from pietto.parser_api import _parse_migration_source
+from pietto.indentation import inject_indentation, join_parenthesized_lines
+from pietto.parser_api import parse_source
 
 request = json.load(sys.stdin)
 missing = sorted(set(request["rules"]) - set(PiettoLexer.symbolicNames))
@@ -201,12 +206,126 @@ if missing or unread:
              f"lexer keywords not read from Pietto.g4 {unread}")
 keyword_types = {getattr(PiettoLexer, name) for name in request["rules"]}
 name_parents = (PiettoParser.IdentifierContext, PiettoParser.SoftKeywordContext, PiettoParser.TypeArgumentNameContext)
+
+class LineEndSimulator(LexerATNSimulator):
+    def consume(self, input):
+        character = input.LA(1)
+        if character == 0x0A or (character == 0x0D and input.LA(2) != 0x0A):
+            self.line += 1
+            self.column = 0
+        else:
+            self.column += 1
+        input.consume()
+
+class SourceLexer(PiettoLexer):
+    def __init__(self, input):
+        super().__init__(input)
+        self._interp = LineEndSimulator(self, self.atn, self.decisionsToDFA, PredictionContextCache())
+
+def source_tokens(text):
+    lexer = SourceLexer(InputStream(text))
+    lexer.removeErrorListeners()
+    tokens = []
+    while True:
+        token = lexer.nextToken()
+        tokens.append(token)
+        if token.type == Token.EOF:
+            return tokens
+
+def syntax_tree(text):
+    # The public parser admits the source; this tree supplies grammar roles.
+    raw = source_tokens(text)
+    joined = join_parenthesized_lines(
+        raw,
+        newline_type=PiettoLexer.NEWLINE,
+        open_type=PiettoLexer.LPAREN,
+        close_type=PiettoLexer.RPAREN,
+        window_type=PiettoLexer.WINDOW,
+        colon_type=PiettoLexer.COLON,
+        path=None,
+    )
+    if joined.diagnostics:
+        return None
+    tokens = list(
+        inject_indentation(
+            joined.tokens,
+            newline_type=PiettoLexer.NEWLINE,
+            indent_type=PiettoParser.INDENT,
+            dedent_type=PiettoParser.DEDENT,
+            path=None,
+        ).tokens
+    )
+    layout = {Token.EOF, PiettoLexer.NEWLINE, PiettoParser.INDENT, PiettoParser.DEDENT}
+    starts = [
+        index
+        for index, token in enumerate(tokens)
+        if token.column == 0 and token.type not in layout and (index == 0 or tokens[index - 1].type in layout)
+    ]
+    for index in starts:
+        token = tokens[index]
+        if (
+            token.type == PiettoLexer.IDENTIFIER
+            and index + 1 < len(tokens)
+            and tokens[index + 1].type == PiettoLexer.COLON
+        ):
+            depth = 0
+            for candidate in tokens[index + 2:]:
+                if candidate.type in {Token.EOF, PiettoLexer.NEWLINE, PiettoParser.INDENT, PiettoParser.DEDENT}:
+                    break
+                depth += (candidate.type == PiettoLexer.LPAREN) - (candidate.type == PiettoLexer.RPAREN)
+                if candidate.type == PiettoLexer.ASSIGN and depth == 0:
+                    token.type = PiettoParser.CONSTANT_NAME
+                    break
+    parser = PiettoParser(CommonTokenStream(ListTokenSource(tokens)))
+    parser.removeErrorListeners()
+    tree = parser.script()
+    return None if parser.getNumberOfSyntaxErrors() else tree
+
+def keyword_roles(tree):
+    if tree is None:
+        return None
+    keywords = []
+    def walk(node):
+        if isinstance(node, TerminalNode):
+            token = node.symbol
+            if token.type in keyword_types and token.tokenIndex >= 0 and token.line > 0:
+                role = "name" if isinstance(node.parentCtx, name_parents) else "keyword"
+                keywords.append([token.line - 1, token.column, token.text, role])
+            return
+        for child in node.getChildren():
+            walk(child)
+    walk(tree)
+    keywords.sort()
+    return keywords
+
+def parsed_tree(text):
+    result = parse_source(text)
+    migrated_spelling = result.diagnostics and all(
+        diagnostic.code == "PIE-P1000"
+        and diagnostic.message.startswith("This spelling is not accepted by the modern syntax.")
+        for diagnostic in result.diagnostics
+    )
+    return result, syntax_tree(text) if result.ast is not None or migrated_spelling else None
+
+def self_check():
+    for name, text, expected in (
+        ("LF", "shape S:\n    id: Int\nshape T:\n    id: Int\n", [[0, 0, "shape", "keyword"], [2, 0, "shape", "keyword"]]),
+        ("CRLF", "shape S:\r\n    id: Int\r\nshape T:\r\n    id: Int\r\n", [[0, 0, "shape", "keyword"], [2, 0, "shape", "keyword"]]),
+        ("lone CR", "shape S:\r    id: Int\rshape T:\r    id: Int\r", [[0, 0, "shape", "keyword"], [2, 0, "shape", "keyword"]]),
+        ("retired header", "pietto 0.9\nshape Legacy:\n    id: Int\n", [[0, 0, "pietto", "keyword"], [1, 0, "shape", "keyword"]]),
+    ):
+        result, tree = parsed_tree(text)
+        if keyword_roles(tree) != expected:
+            sys.exit(
+                f"{name} parser role self-check failed: {keyword_roles(tree)!r}; "
+                f"diagnostics {[item.code for item in result.diagnostics]}"
+            )
+
+self_check()
 out = []
 for text in request["texts"]:
-    lexed = PiettoLexer(InputStream(text))
-    lexed.removeErrorListeners()
-    tokens = lexed.getAllTokens()
-    lines = text.split("\n")
+    tokens = source_tokens(text)[:-1]
+    lines = re.split(r"\r\n|\r|\n", text)
     def span(token):
         return [token.line - 1, token.column, token.column + len(token.text)]
     strings = [span(t) for t in tokens if t.type in (PiettoLexer.STRING, PiettoLexer.UNTERMINATED_STRING)]
@@ -216,21 +335,8 @@ for text in request["texts"]:
             if char == "#" and not any(s[0] == number and s[1] <= column < s[2] for s in strings):
                 comments.append([number, column])
                 break
-    keywords = None
-    result, tree = _parse_migration_source(text, modern=True)
-    if tree is not None:
-        keywords = []
-        def walk(node):
-            if isinstance(node, TerminalNode):
-                token = node.symbol
-                if token.type in keyword_types and token.tokenIndex >= 0 and token.line > 0:
-                    role = "name" if isinstance(node.parentCtx, name_parents) else "keyword"
-                    keywords.append([token.line - 1, token.column, token.text, role])
-                return
-            for child in node.getChildren():
-                walk(child)
-        walk(tree)
-        keywords.sort()
+    result, tree = parsed_tree(text)
+    keywords = keyword_roles(tree)
     out.append({
         "keywords": keywords,
         "strings": strings,

@@ -8,6 +8,7 @@ The extension is declarative language support plus one language client.
 | Snippets | `snippets/pietto.json` | no |
 | Comments, brackets, indentation, folding | `language-configuration.json` (folding is VS Code's indentation folding with `folding.offSide`) | no |
 | Diagnostics | `pietto lsp`, through `vscode-languageclient` | yes |
+| Hover, definition and document symbols | Standard LSP from `pietto lsp`, through `vscode-languageclient` | yes |
 | PostgreSQL SQL preview | `pietto emit-sql FILE --dialect postgres --format json` | yes |
 
 ## Grammar and snippets
@@ -87,6 +88,23 @@ The server re-reads a project root only on a document event inside it, so
 the README asks for **Pietto: Restart Language Server** after an edit of
 `pietto.toml` or of modules outside the editor.
 
+## Editor navigation
+
+The client uses the standard LSP hover, definition and document-symbol
+capabilities that a compatible Pietto server advertises; it has no private
+provider, core import or editor-facts transport. Pietto answers each request
+from an ephemeral snapshot made by the same analysis that produced the current
+diagnostics. A document edit, close, root or URI conflict, or failed analysis
+invalidates that snapshot. In those cases, and for unknown or ambiguous
+bindings, the server returns no hover or definition and no symbols.
+
+Definition returns a target location only for an exact retained `type` or
+`from` target. Hover exposes retained declaration and type text, including a
+known builtin type; document symbols list named top-level declarations in
+source order. The request itself does not parse, check, compile or read the
+document. Fields, lets, parameters, function calls, completion and formatting
+remain outside this contract.
+
 ## PostgreSQL SQL preview
 
 **Pietto: Preview PostgreSQL SQL (Single File)** accepts only a saved,
@@ -120,8 +138,9 @@ Highlighting, snippets and folding work.
 
 ## What the extension does not do
 
-No hover, completion, definition, outline, formatter, tree views,
-connection configuration, telemetry, source upload or automatic installation.
-The adapter of 0.1.0 and 0.1.1 that provided hover, completion, definition,
-outline and the model and connection views imported private Pietto modules, so
-it was removed; those features return only on public Pietto contracts.
+No completion, formatter, tree views, connection configuration, telemetry,
+source upload or automatic installation. The adapter of 0.1.0 and 0.1.1 that
+provided broader hover, completion, definition, outline and the model and
+connection views imported private Pietto modules, so it remains removed. The
+current standard-LSP navigation uses only the public core contract and does not
+restore those views or broader binding categories.
