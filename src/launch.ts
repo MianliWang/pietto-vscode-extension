@@ -12,7 +12,14 @@ export const probeArguments = (launcher: string[]) => [...launcher, ...entryPoin
 // in the Python program would make a quote in a filename change the program itself.
 const commandEntryPoint = ['-I', '-c', 'import sys; from pietto.cli import main; sys.exit(main(sys.argv[1:]))'];
 export const commandArguments = (launcher: string[], argv: string[]) => [...launcher, ...commandEntryPoint, ...argv];
-export const previewArguments = (launcher: string[], source: string[]) => commandArguments(launcher, ['emit-sql', ...source, '--dialect', 'postgres', '--format', 'json']);
+export type Dialect = 'postgres' | 'mysql';
+export const isDialect = (value: unknown): value is Dialect => value === 'postgres' || value === 'mysql';
+export const previewArguments = (launcher: string[], source: string[], dialect: Dialect) => commandArguments(launcher, ['emit-sql', ...source, '--dialect', dialect, '--format', 'json']);
+// The batch form of project emit-sql, narrowed to one module. Each value is joined to its
+// option with `=`, so a module or contract path that starts with `-` stays a value.
+export interface ProjectRequest {readonly root: string; readonly module: string; readonly dialect: Dialect; readonly contract: string}
+export const projectPreviewArguments = (launcher: string[], {root, module, dialect, contract}: ProjectRequest) => commandArguments(launcher,
+  ['emit-sql', `--project=${root}`, '--all', `--module=${module}`, `--dialect=${dialect}`, `--emission-contract=${contract}`, '--format=json']);
 
 // Settings arrive unchecked (VS Code only warns about a value that breaks the schema),
 // so a list setting keeps its strings and anything else counts as empty.
@@ -47,6 +54,17 @@ export function resolveRoots(folders: [folder: string, roots: unknown][], window
     }
   }
   return [...roots.values()];
+}
+
+// The roots that contain a file, each with the file's module path: project-relative with
+// `/` separators, as emit-sql --project --module takes it.
+export function projectsOf(file: string, roots: string[], windows = process.platform === 'win32'): {root: string; module: string}[] {
+  const paths = windows ? path.win32 : path.posix;
+  return roots.flatMap(root => {
+    const relative = paths.relative(root, file);
+    const outside = !relative || relative === '..' || relative.startsWith(`..${paths.sep}`) || paths.isAbsolute(relative);
+    return outside ? [] : [{root, module: relative.split(paths.sep).join('/')}];
+  });
 }
 
 // A Windows desktop that launches a Linux interpreter through wsl.exe sees C:\x as /mnt/c/x.

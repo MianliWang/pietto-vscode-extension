@@ -9,7 +9,8 @@ The extension is declarative language support plus one language client.
 | Comments, brackets, indentation, folding | `language-configuration.json` (folding is VS Code's indentation folding with `folding.offSide`) | no |
 | Diagnostics | `pietto lsp`, through `vscode-languageclient` | yes |
 | Hover, definition and document symbols | Standard LSP from `pietto lsp`, through `vscode-languageclient` | yes |
-| PostgreSQL SQL preview | `pietto emit-sql FILE --dialect postgres --format json` | yes |
+| Single-file SQL preview | `pietto emit-sql FILE --dialect {postgres,mysql} --format json` | yes |
+| Project SQL preview | `pietto emit-sql --project ROOT --all --module MODULE --dialect {postgres,mysql} --emission-contract FILE --format json` | yes |
 
 ## Grammar and snippets
 
@@ -105,21 +106,61 @@ source order. The request itself does not parse, check, compile or read the
 document. Fields, lets, parameters, function calls, completion and formatting
 remain outside this contract.
 
-## PostgreSQL SQL preview
+## SQL preview
 
-**Pietto: Preview PostgreSQL SQL (Single File)** accepts only a saved,
-unchanged file document. It runs the selected interpreter with `-I` and the
-public `emit-sql` command in a separate argv array, rather than embedding the
-file path in Python code. On Windows with a `wsl.exe` launcher, the file path
-uses the existing `/mnt` conversion. The response must be a matching CLI JSON
-v1 `emit-sql` envelope for that exact input path. A refusal, an unexpected
-stderr stream, invalid JSON, timeout, cancellation, document edit/close,
-configuration change, or superseding preview opens no result.
+The three preview commands accept only a saved, unchanged file document. Each
+runs the selected interpreter with `-I` and the public `emit-sql` command in a
+separate argv array, rather than embedding paths in Python code. On Windows
+with a `wsl.exe` launcher, the file and root paths use the existing `/mnt`
+conversion. The dialect is a command argument `{"dialect": ...}`, else the
+resource setting `pietto.sqlDialect` (`postgres` or `mysql`); **Pietto:
+Preview PostgreSQL SQL (Single File)** fixes it to `postgres`. An unexpected
+stderr stream, invalid JSON, a response other than the expected one, timeout,
+cancellation, document edit or close, interpreter or project root change, or
+a superseding preview opens no result. Parsers read only the fields they show
+and ignore the others, so an additive Pietto field changes nothing; an unknown
+`schema_version` or `format` is refused.
 
-The virtual document holds the exact SQL of one artifact. Multiple artifacts
-are offered in compiler order. The preview never writes the source file,
-executes SQL, formats a buffer, selects a project root, or calls private core
-APIs.
+Single file: `emit-sql FILE --dialect DIALECT --format json` (CLI JSON v1).
+The response must be a v1 `emit-sql` envelope of that dialect for that exact
+input path. Multiple artifacts are offered in compiler order.
+
+Project: `emit-sql --project=ROOT --all --module=MODULE --dialect=DIALECT
+--emission-contract=CONTRACT --format=json`, the documented batch form
+narrowed to the active module. Each value is joined to its option with `=`, so
+a path that starts with `-` stays a value. `ROOT` is the one entry of
+`pietto.projectRoots` that contains the file (none or two are refused before
+Pietto runs), `MODULE` the file's root-relative path with `/` separators, and
+`CONTRACT` the argument `{"emissionContract": ...}`, else the resource setting
+`pietto.emissionContract`, passed unchanged; Pietto itself reads it under its
+pinned-root rules. Pietto compiles the project from disk, so any unsaved file
+of the root refuses the preview, and a change or save of one while Pietto runs
+makes the result stale. The response must be a `pietto.sql-emission.batch.v1`
+document whose exit code is the one its status documents (0, 1 or 2), whose
+status is its failure document's or else the one its items derive (any
+`INPUT_REJECTED`, else any `BLOCKED`, else `VERIFIED`), whose items name the
+requested module, and whose `VERIFIED` items have the requested target family.
+Items are `pietto.sql-emission.v1` or `v2` documents and are offered in batch
+(project authority) order with their status. A `VERIFIED` item opens its exact
+`sql`; a `BLOCKED` or `INPUT_REJECTED` item, and a whole-batch `BLOCKED`
+failure document, open as a plain-text report: a heading line naming the
+owner or module and the dialect, then exactly the lines that
+`--format text` writes to stderr for that document (pietto 0.1.10's failure
+presentation). These are the `format status` line; each CLI error as
+`error KIND: MESSAGE` with ` (path: PATH)` when it has one; each blocker as
+`blocker CODE REASON: DETAIL` with ` (PATH:LINE:COLUMN)` when it is located,
+then `  related: ...` for its located related locations and `  hint: ...`; and
+each diagnostic as `PATH:LINE:COLUMN CODE SEVERITY: MESSAGE`. Every value is
+escaped as Pietto escapes text (C0 controls and DEL as `\xNN`; C1, separator
+and bidi controls as `\uNNNN`), so each entry stays on one line. The
+real-CLI test compares the report with Pietto's own text output. A
+whole-batch `INPUT_REJECTED` document is shown as a message of the same
+lines. The output limit is Pietto's 64 MiB batch limit and the deadline 60
+seconds, against 4 MiB and 30 seconds for one file.
+
+Every virtual document is read-only and holds exactly one artifact's SQL or
+one report. The previews never write a source file, execute SQL, format a
+buffer, choose a project root or contract, or call private core APIs.
 
 ## Windows desktop with a WSL interpreter
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 (candidate)
+
+- **Pietto: Preview SQL (Single File)** previews MySQL as well as PostgreSQL,
+  by the new `pietto.sqlDialect` setting or a `{"dialect": ...}` command
+  argument.
+- **Pietto: Preview Project SQL (Module)** runs the public batch
+  `pietto emit-sql --project ROOT --all --module MODULE` for the active module
+  of a project root, with the dialect and the new `pietto.emissionContract`
+  setting (or command arguments). It refuses while any file of the root is
+  unsaved, offers the module's tables and queries in project order, opens the
+  exact SQL of a `VERIFIED` item, and opens a `BLOCKED` or `INPUT_REJECTED`
+  document as a plain-text report with the same lines as Pietto's own
+  `--format text` failure output: CLI errors, blockers with their locations,
+  related locations and hints, then diagnostics, with control characters
+  escaped. A result whose batch status disagrees with its items or failure
+  document is refused. Both previews ignore JSON fields they do not read and
+  refuse an unknown document format. Both need pietto 0.1.10, like the
+  language server.
+
 ## 0.3.0 (candidate)
 
 - **Pietto: Preview PostgreSQL SQL (Single File)** opens one PostgreSQL SQL

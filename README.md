@@ -121,15 +121,7 @@ of the file:
 | Two selected files differ only in letter case | `This file is selected under two names that differ only in letter case: <name 1> and <name 2>. Rename one of them.` |
 | The editor sent a partial change | `Pietto needs whole-document changes; reopen this file.` |
 
-Use **Pietto: Preview PostgreSQL SQL (Single File)** on a saved, unchanged
-`.pietto` file to open one emitted PostgreSQL SQL artifact in a read-only editor.
-The command runs `pietto emit-sql FILE --dialect postgres --format json` through
-the selected interpreter. It never saves the file, executes SQL, selects a
-project root or reads an unsaved buffer. If a file emits several artifacts, it
-asks which one to open in compiler order. A refusal shows Pietto's diagnostics
-and opens no SQL document.
-
-Alongside diagnostics and PostgreSQL SQL preview, a Pietto server that exposes
+Alongside diagnostics and [SQL preview](#preview-sql), a Pietto server that exposes
 the editor-facts v1 contract provides standard hover, go to definition and the
 document outline. They are deliberately narrow: definition is available only
 for exact retained `type` and `from` targets. Hover shows retained declaration
@@ -142,6 +134,59 @@ not reparse or compile the document.
 
 Run one Pietto diagnostics source per file; if another tool already runs
 `pietto check` on save, turn it off.
+
+## Preview SQL
+
+The preview commands open SQL that Pietto emits in a read-only editor. They
+run the public `pietto emit-sql` command through the selected interpreter and
+read only files saved on disk, so they refuse an unsaved buffer. They never
+save or write a source file, execute SQL or connect to a database. A result
+that goes stale while Pietto runs (the file changes or closes, for a project
+preview any file of its root changes or is saved, the interpreter or project
+root settings change, or another preview starts) opens nothing.
+
+- **Pietto: Preview SQL (Single File)** runs
+  `pietto emit-sql FILE --dialect DIALECT --format json` for the active saved
+  `.pietto` file, where `DIALECT` is the `pietto.sqlDialect` setting:
+  `postgres` (the default) or `mysql`. If the file emits several artifacts, it
+  asks which one to open, in compiler order. A refusal shows Pietto's
+  diagnostics and opens no SQL document. It selects no project root.
+- **Pietto: Preview PostgreSQL SQL (Single File)** is the same command with
+  the dialect fixed to `postgres`.
+- **Pietto: Preview Project SQL (Module)** previews the public tables and
+  queries of the active module of a project root in `pietto.projectRoots`. It
+  runs the batch form of project emission for that one module:
+
+  ```text
+  pietto emit-sql --project=ROOT --all --module=MODULE --dialect=DIALECT --emission-contract=CONTRACT --format=json
+  ```
+
+  `MODULE` is the file's path relative to the root, with `/` separators.
+  `CONTRACT` is the `pietto.emissionContract` setting, the project's
+  [emission contract](https://github.com/MianliWang/pietto/blob/v0.1.10/docs/project-package.md#project-sql-emission):
+  a path relative to the root, such as `contract.json`, whose target family
+  is the dialect. Every file of the root must be saved. The command lists the
+  batch items in project order with their status, or opens a single item
+  directly. A `VERIFIED` item opens its exact SQL. A `BLOCKED` or
+  `INPUT_REJECTED` item opens a plain-text report with the same lines as
+  `pietto emit-sql ... --format text` writes for it: its errors, its blockers
+  (code, reason, detail, location, related locations and the `hint:`
+  suggestion) and its diagnostics, with control characters escaped. So does a
+  whole-project `BLOCKED` document, such as a project with errors. A refusal
+  of the whole batch, such as a missing contract or a module without a public
+  table or query, is shown as a message.
+
+A keybinding can pass the dialect and the contract, which take precedence over
+the settings; `pietto.previewSql` takes `{"dialect": ...}` the same way. Both
+settings are per resource, so each workspace folder can have its own:
+
+```json
+{
+  "key": "ctrl+alt+m",
+  "command": "pietto.previewProjectSql",
+  "args": {"dialect": "mysql", "emissionContract": "contracts/mysql.json"}
+}
+```
 
 ## Restricted Mode
 

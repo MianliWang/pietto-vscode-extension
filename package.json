@@ -100,6 +100,14 @@
       {
         "command": "pietto.previewPostgresSql",
         "title": "Pietto: Preview PostgreSQL SQL (Single File)"
+      },
+      {
+        "command": "pietto.previewSql",
+        "title": "Pietto: Preview SQL (Single File)"
+      },
+      {
+        "command": "pietto.previewProjectSql",
+        "title": "Pietto: Preview Project SQL (Module)"
       }
     ],
     "configuration": {
@@ -128,6 +136,26 @@
           "default": [],
           "scope": "resource",
           "description": "Explicit Pietto project roots (folders that hold pietto.toml), each the same as pietto check --project ROOT. Relative paths resolve against the workspace folder. Empty: every open file is checked as a single file."
+        },
+        "pietto.sqlDialect": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql"
+          ],
+          "enumDescriptions": [
+            "PostgreSQL",
+            "MySQL"
+          ],
+          "default": "postgres",
+          "scope": "resource",
+          "description": "The emit-sql --dialect of Pietto: Preview SQL (Single File) and Pietto: Preview Project SQL (Module). A command argument {\"dialect\": \"mysql\"} overrides it."
+        },
+        "pietto.emissionContract": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "The emission contract file that Pietto: Preview Project SQL (Module) passes as emit-sql --emission-contract: a path relative to the project root with / separators, such as contract.json. Its target family must be the selected dialect. A command argument {\"emissionContract\": \"...\"} overrides it."
         }
       }
     }

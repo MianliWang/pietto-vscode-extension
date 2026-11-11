@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import {Api, codes, pietto, servers, sleep, span, waitFor} from './common';
@@ -14,6 +14,9 @@ export async function run(): Promise<void> {
   const facts = vscode.Uri.file(path.join(project, 'models', 'facts.pietto'));
   const outside = vscode.Uri.file(path.join(workspace, 'loose', 'outside.pietto'));
   const preview = vscode.Uri.file(path.join(workspace, 'loose', 'preview.pietto'));
+  const mysqlPreview = vscode.Uri.file(path.join(workspace, 'loose', 'preview-mysql.pietto'));
+  const items = vscode.Uri.file(path.join(workspace, 'emit', 'models', 'items.pietto'));
+  const blocked = vscode.Uri.file(path.join(workspace, 'emit', 'models', 'blocked.pietto'));
   const extension = vscode.extensions.getExtension<Api>('MianliWang.pietto-vscode-extension');
   assert.ok(extension, 'The real editor host must discover the Pietto extension.');
   if (installedPath) assert.equal(path.resolve(extension.extensionPath), path.resolve(installedPath), 'The installed VSIX, not the source tree, is under test.');
@@ -208,6 +211,125 @@ export async function run(): Promise<void> {
     assert.equal(document.isDirty, true);
     await vscode.commands.executeCommand('workbench.action.files.revert');
   });
+
+  // The active editor shows the preview document with this name.
+  const previewNamed = (name: string) => waitFor(`the preview ${name}`, () => {
+    const current = vscode.window.activeTextEditor?.document;
+    return current?.uri.scheme === 'pietto-sql-preview' && current.uri.path === `/${name}` && current;
+  });
+
+  await step('Preview SQL follows pietto.sqlDialect: a MySQL file opens its MySQL SQL, and a dialect argument overrides the setting', async () => {
+    await settings().update('sqlDialect', 'mysql', vscode.ConfigurationTarget.WorkspaceFolder);
+    const document = await vscode.workspace.openTextDocument(mysqlPreview);
+    await vscode.window.showTextDocument(document);
+    await vscode.commands.executeCommand('pietto.previewSql');
+    const mysql = await previewNamed('preview-mysql.pietto.1.mysql.sql');
+    assert.equal(mysql.getText(), 'SELECT\n    `id` AS `id`\nFROM `fixture`.`items`');
+    assert.equal(mysql.languageId, 'sql');
+    assert.equal(readFileSync(mysqlPreview.fsPath, 'utf8'), document.getText(), 'Preview did not write the source file.');
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(preview));
+    await vscode.commands.executeCommand('pietto.previewSql', {dialect: 'postgres'});
+    const postgres = await previewNamed('preview.pietto.1.postgres.sql');
+    assert.equal(postgres.getText(), 'SELECT\n    "id" AS "id"\nFROM "public"."items"');
+    await settings().update('sqlDialect', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+    return {mysql: mysql.getText(), postgres: postgres.getText()};
+  });
+
+  await step('Preview Project SQL offers the batch items of a module in order and opens the chosen VERIFIED SQL', async () => {
+    await settings().update('projectRoots', ['emit'], vscode.ConfigurationTarget.WorkspaceFolder);
+    const document = await vscode.workspace.openTextDocument(items);
+    await vscode.window.showTextDocument(document);
+    // The module has the table active_items (VERIFIED), then the query small_items (BLOCKED);
+    // once the quick pick is up, accepting it takes the first.
+    const command = vscode.commands.executeCommand('pietto.previewProjectSql', {emissionContract: 'contract.json'});
+    const sql = await waitFor('the first item of the project SQL quick pick', async () => {
+      const current = vscode.window.activeTextEditor?.document;
+      if (current?.uri.scheme === 'pietto-sql-preview' && current.uri.path === '/items.pietto.table.active_items.postgres.sql') return current;
+      await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+      return false;
+    }, 60_000);
+    await command;
+    assert.equal(sql.getText(), 'SELECT "s0"."item_id" AS "id", "s0"."item_label" AS "label" FROM "fixture"."items" AS "s0"');
+    assert.equal(sql.languageId, 'sql');
+    assert.equal(readFileSync(items.fsPath, 'utf8'), document.getText(), 'Preview did not write the source file.');
+    return {path: sql.uri.path, sql: sql.getText()};
+  });
+
+  await step('Preview Project SQL shows a BLOCKED document as a report of its blockers', async () => {
+    await settings().update('emissionContract', 'contract.json', vscode.ConfigurationTarget.WorkspaceFolder);
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(blocked));
+    await vscode.commands.executeCommand('pietto.previewProjectSql');
+    const report = await previewNamed('blocked.pietto.query.large_items.postgres.blocked.txt');
+    assert.equal(report.languageId, 'plaintext');
+    assert.equal(report.getText(), 'query large_items in models/blocked.pietto, PostgreSQL\npietto.sql-emission.v1 BLOCKED\n'
+      + 'blocker PIE-B1004 MISSING_EVIDENCE: identifier_case_declaration_missing\n  hint: add {"key":"identifier_case","scope":"statement","value":"quoted_exact"} to "environment"\n');
+    return {report: report.getText()};
+  });
+
+  // A stand-in interpreter that runs the real one, but first marks each emit-sql run in
+  // gated-python.started and holds it until gated-python.go exists.
+  const gate = process.platform === 'win32' ? undefined : path.join(root, '.local', 'gated-python');
+  const [started, go] = [`${gate}.started`, `${gate}.go`];
+  if (!gate) console.log('SKIP whether Pietto runs for a refused project preview, and a project change while it runs: the stand-in interpreter is a POSIX shell script');
+  else {
+    const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+    writeFileSync(gate, `#!/bin/sh\nfor arg; do if [ "$arg" = emit-sql ]; then : > ${quote(started)}; while [ ! -e ${quote(go)} ]; do sleep 0.05; done; fi; done\n`
+      + `exec ${quote(interpreter().get<string>('pythonPath', 'python'))} "$@"\n`, {mode: 0o755});
+    rmSync(started, {force: true});
+    writeFileSync(go, '');
+    await interpreter().update('pythonPath', gate, vscode.ConfigurationTarget.Workspace);
+  }
+
+  await step('Preview Project SQL refuses, without running Pietto, while another file of the project root has unsaved changes', async () => {
+    const other = await vscode.workspace.openTextDocument(items);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(items, new vscode.Position(0, 0), '# unsaved\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(blocked));
+    await vscode.commands.executeCommand('pietto.previewProjectSql');
+    if (gate) assert.equal(existsSync(started), false, 'Pietto did not run.');
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), blocked.toString());
+    assert.equal(other.isDirty, true);
+    await vscode.window.showTextDocument(other);
+    await vscode.commands.executeCommand('workbench.action.files.revert');
+  });
+
+  if (gate) await step('Preview Project SQL opens nothing when another file of the project root is changed and saved while Pietto runs', async () => {
+    rmSync(go);
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(items));
+    let done = false;
+    const command = Promise.resolve(vscode.commands.executeCommand('pietto.previewProjectSql')).finally(() => { done = true; });
+    await waitFor('Pietto to start', () => existsSync(started));
+    // Saved again, the root has no unsaved file and the active document is unchanged; only the
+    // change itself makes the result stale.
+    const changed = await vscode.workspace.openTextDocument(blocked);
+    const disk = changed.getText();
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(blocked, new vscode.Position(0, 0), '# changed while Pietto runs\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    assert.equal(await changed.save(), true);
+    writeFileSync(go, '');
+    // A result that is not stale offers the module's two items, and accepting takes the first.
+    await waitFor('the stale project preview to finish', async () => {
+      if (done) return true;
+      await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+      return false;
+    }, 60_000);
+    await command;
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), items.toString(), 'A stale project result opens no preview.');
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(blocked, new vscode.Range(0, 0, 1, 0));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    assert.equal(await changed.save(), true);
+    assert.equal(readFileSync(blocked.fsPath, 'utf8'), disk);
+  });
+  for (const name of ['projectRoots', 'emissionContract']) await settings().update(name, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+  if (gate) {
+    // The next steps count the messages of their own restarts, so this one finishes first.
+    const gated = api.client;
+    await interpreter().update('pythonPath', undefined, vscode.ConfigurationTarget.Workspace);
+    await waitFor('a server from the real interpreter', () => api.client !== gated && api.client?.initializeResult, 60_000);
+  }
 
   await step('an interpreter without pietto: one actionable message, no server process, no restart loop', async () => {
     const before = api.notices.length;

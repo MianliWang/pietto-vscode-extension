@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {test} from 'node:test';
-import {commandArguments, fromWsl, isWslLauncher, previewArguments, probe, probeArguments, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
-import {parsePreview, showIfCurrent} from '../src/preview';
+import {commandArguments, fromWsl, isWslLauncher, previewArguments, probe, probeArguments, projectPreviewArguments, projectsOf, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
 import {python, pythonArguments} from './editor';
 
 test('the server runs the pietto console entry point in isolated mode after the launcher arguments', () => {
@@ -17,42 +16,33 @@ test('the server runs the pietto console entry point in isolated mode after the 
 
 test('SQL preview passes a filename as an argument, never as Python source', () => {
   const source = "/work/it's a query.pietto";
-  const args = previewArguments(['-d', 'Ubuntu', '--', '/venv/bin/python'], [source]);
+  const args = previewArguments(['-d', 'Ubuntu', '--', '/venv/bin/python'], [source], 'postgres');
   assert.deepEqual(args.slice(0, 3), ['-d', 'Ubuntu', '--']);
-  assert.equal(args[args.indexOf('emit-sql') + 1], source);
+  assert.deepEqual(args.slice(args.indexOf('emit-sql')), ['emit-sql', source, '--dialect', 'postgres', '--format', 'json']);
   const script = args[args.indexOf('-c') + 1];
   assert.match(script, /sys\.argv\[1:\]/);
   assert.doesNotMatch(script, /it's a query/);
   assert.deepEqual(commandArguments([], ['emit-sql', source]).slice(-2), ['emit-sql', source]);
+  assert.deepEqual(previewArguments([], [source], 'mysql').slice(-5), [source, '--dialect', 'mysql', '--format', 'json']);
 });
 
-test('SQL preview accepts only the public PostgreSQL emit-sql v1 envelope and preserves artifact order', () => {
-  const ready = parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: [
-    {kind: 'query', name: 'first', sql: 'SELECT 1'}, {kind: 'table', name: 'second', sql: 'SELECT 2'},
-  ]}));
-  assert.deepEqual(ready, {status: 'ready', artifacts: [{kind: 'query', name: 'first', sql: 'SELECT 1'}, {kind: 'table', name: 'second', sql: 'SELECT 2'}]});
-  assert.deepEqual(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: false, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [{code: 'PIE-B1003', message: 'not admitted'}], cli_errors: [], artifacts: [{kind: 'query', name: 'forbidden', sql: 'SELECT secret'}]})),
-    {status: 'refused', message: 'PIE-B1003: not admitted'});
-  assert.equal(parsePreview('{').status, 'failed');
-  assert.equal(parsePreview(JSON.stringify({schema_version: 2, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
-  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'other.pietto', dialect: 'postgres', output: null, diagnostics: [], cli_errors: [], artifacts: []}), 'one.pietto').status, 'failed');
-  assert.deepEqual(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: false, path: null, dialect: 'postgres', output: null, diagnostics: [{code: 'usage', message: 'missing input'}], cli_errors: [], artifacts: []}), 'one.pietto'),
-    {status: 'refused', message: 'usage: missing input'});
-  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
-  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'mysql', output: null, diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
-  assert.equal(parsePreview(JSON.stringify({schema_version: 1, command: 'emit-sql', ok: true, path: 'one.pietto', dialect: 'postgres', output: 'out.sql', diagnostics: [], cli_errors: [], artifacts: []})).status, 'failed');
+test('project SQL preview runs the documented batch form for one module, each value joined to its option', () => {
+  const args = projectPreviewArguments([], {root: "/work/it's a project", module: '-odd/main.pietto', dialect: 'mysql', contract: 'contracts/my sql.json'});
+  assert.deepEqual(args.slice(args.indexOf('emit-sql')), ['emit-sql', "--project=/work/it's a project", '--all', '--module=-odd/main.pietto', '--dialect=mysql',
+    '--emission-contract=contracts/my sql.json', '--format=json']);
+  assert.doesNotMatch(args[args.indexOf('-c') + 1], /it's a project/);
 });
 
-test('SQL preview does not show a document that becomes stale while it opens', async () => {
-  let resolve: ((document: string) => void) | undefined;
-  const opening = new Promise<string>(done => { resolve = done; });
-  let current = true;
-  const shown: string[] = [];
-  const result = showIfCurrent(() => opening, () => current, async document => { shown.push(document); });
-  current = false;
-  resolve?.('SQL');
-  assert.equal(await result, false);
-  assert.deepEqual(shown, []);
+test('a file belongs to each root that contains it, with its project-relative module path', () => {
+  assert.deepEqual(projectsOf('/work/shop/models/main.pietto', ['/work/shop', '/work/shop/models', '/work/other'], false), [
+    {root: '/work/shop', module: 'models/main.pietto'}, {root: '/work/shop/models', module: 'main.pietto'},
+  ]);
+  assert.deepEqual(projectsOf('/work/shop', ['/work/shop'], false), []);
+  assert.deepEqual(projectsOf('/work/shopping/a.pietto', ['/work/shop'], false), []);
+  assert.deepEqual(projectsOf('/work/shop/..data/a.pietto', ['/work/shop'], false), [{root: '/work/shop', module: '..data/a.pietto'}]);
+  assert.deepEqual(projectsOf('/work/a.pietto', ['/work/shop'], false), []);
+  assert.deepEqual(projectsOf('c:\\Work\\Shop\\models\\main.pietto', ['C:\\work\\shop'], true), [{root: 'C:\\work\\shop', module: 'models/main.pietto'}]);
+  assert.deepEqual(projectsOf('D:\\shop\\main.pietto', ['C:\\shop'], true), []);
 });
 
 test('the server script is valid Python', () => {

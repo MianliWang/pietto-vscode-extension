@@ -21,7 +21,7 @@ export async function run(): Promise<void> {
   assert.equal(api.client, undefined);
   assert.deepEqual(servers() ?? [], [], 'No pietto lsp process in Restricted Mode.');
   assert.deepEqual(pietto(file), [], 'No diagnostics in Restricted Mode.');
-  await vscode.commands.executeCommand('pietto.previewPostgresSql');
+  for (const command of ['pietto.previewPostgresSql', 'pietto.previewSql', 'pietto.previewProjectSql']) await vscode.commands.executeCommand(command);
   await sleep(100);
   assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), file.toString(), 'Restricted Mode does not open SQL preview.');
   assert.deepEqual(servers() ?? [], [], 'Restricted Mode starts no preview process.');
