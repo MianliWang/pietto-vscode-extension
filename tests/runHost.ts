@@ -25,7 +25,7 @@ const contract = {
 // The acceptance workspace: an EXPLICIT_MODULES project, a second
 // configuration that also selects them, files outside the project, and an
 // emit project with an emission contract for project SQL preview.
-const fixture: Record<string, string> = {
+export const fixture: Record<string, string> = {
   '.vscode/settings.json': '{}\n',
   'project/pietto.toml': 'schema_version = 2\n\n[sources]\ninclude = ["models/*.pietto"]\n',
   'project/models/pietto.toml': 'schema_version = 2\n\n[sources]\ninclude = ["*.pietto"]\n',
@@ -74,4 +74,5 @@ async function main() {
   });
 }
 
-void main().catch(error => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+// The Node tests read the fixture without starting an editor.
+if (require.main === module) void main().catch(error => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });

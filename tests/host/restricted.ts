@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
-import {Api, pietto, servers, sleep} from './common';
+import {Api, explains, pietto, servers, sleep} from './common';
 
 export async function run(): Promise<void> {
   const root = process.env.PIETTO_HOST_ROOT!;
@@ -29,6 +29,12 @@ export async function run(): Promise<void> {
   await sleep(100);
   assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), file.toString(), 'Restricted Mode does not open a migration preview.');
   assert.ok(!vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputTextDiff)), 'Restricted Mode opens no diff.');
+  // The project root '.' is selected, so a broken trust gate would run explain on it.
+  await vscode.commands.executeCommand('pietto.models.focus');
+  await vscode.commands.executeCommand('pietto.refreshModels');
+  await sleep(2000);
+  assert.deepEqual(await api.models.getChildren(), [{label: 'Trust this workspace to list Pietto models.'}]);
+  assert.deepEqual(explains() ?? [], [], 'Restricted Mode runs no explain.');
   assert.deepEqual(api.notices, []);
   assert.ok(!vscode.workspace.getConfiguration('pietto').get<string>('pythonPath')?.includes('workspace-selected-python'), 'The workspace interpreter setting is ignored.');
   const completion = await vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', file, new vscode.Position(document.lineCount - 1, 0));
@@ -37,7 +43,7 @@ export async function run(): Promise<void> {
   const folds = await vscode.commands.executeCommand<vscode.FoldingRange[]>('vscode.executeFoldingRangeProvider', file);
   // VS Code's indentation folding with folding.offSide: a block's trailing blank lines stay outside its fold.
   assert.deepEqual(folds.map(fold => [fold.start, fold.end]), [[0, 1], [3, 6], [5, 6]], 'Indented blocks fold.');
-  console.log('PASS Restricted Mode: Pietto language mode, snippets and folding available; no pietto lsp process, no diagnostics, workspace interpreter ignored.');
+  console.log('PASS Restricted Mode: Pietto language mode, snippets and folding available; no pietto lsp or explain process, no diagnostics, workspace interpreter ignored.');
   mkdirSync(path.join(root, 'artifacts'), {recursive: true});
   writeFileSync(path.join(root, 'artifacts', 'restricted-host-results.json'), JSON.stringify({
     vscode: vscode.version, extensionPath: extension.extensionPath, trusted: vscode.workspace.isTrusted, client: api.client ?? null,

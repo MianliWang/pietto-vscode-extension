@@ -8,7 +8,18 @@
   retained declaration/type facts and symbols list named top-level
   declarations. Unknown, ambiguous or stale facts produce no navigation
   result. This does not restore the removed private Python adapter, completion
-  or the model and connection views.
+  or the connection view.
+- The **Pietto Models** view returns, rebuilt on Pietto's public, alpha
+  relation columns (`pietto explain --project --format json`,
+  `pietto.project-relation-columns.v1`). Under each project root it lists
+  every table and query in project order with its output columns: name, type,
+  nullability, the declaring module of an enum or shape, and the element
+  columns of a collection. It reads the saved files only and marks a root with
+  unsaved files. It runs when the view becomes visible, after a save in the
+  root, on a `pietto.*` setting change and with **Pietto: Refresh Models**,
+  one run per root at a time, and never while the view is hidden or the
+  workspace is untrusted. Output it cannot read replaces the whole root with
+  one line that says so. Nodes do not navigate.
 - **Pietto: Preview SQL (Single File)** previews MySQL as well as PostgreSQL,
   by the new `pietto.sqlDialect` setting or a `{"dialect": ...}` command
   argument.

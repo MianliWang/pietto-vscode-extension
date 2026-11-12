@@ -5,7 +5,8 @@ import {once} from 'node:events';
 import {LanguageClient} from 'vscode-languageclient/node';
 import {quickFixes, quickFixTitles} from './actions';
 import {debounce, Dialect, fromWsl, isDialect, isWslLauncher, probe, projectsOf, resolveRoots, serverArguments, strings, toWsl} from './launch';
-import {dialectNames, previewMigration, previewProjectSql, previewSql, showIfCurrent} from './preview';
+import {ModelItem, Node, relationColumns} from './models';
+import {dialectNames, previewMigration, previewProjectSql, previewSql, showIfCurrent, shown} from './preview';
 
 let client: LanguageClient | undefined;
 let server: ChildProcess | undefined;
@@ -91,6 +92,70 @@ export function activate(context: vscode.ExtensionContext) {
     return (queue = queue.then(start).catch(error => output.appendLine(`Pietto language server: ${error}`)));
   };
   const scheduled = debounce(restartDelayMs, () => void restart());
+  const unsavedIn = (root: string) => vscode.workspace.textDocuments.filter(item => item.isDirty && item.uri.scheme === 'file' && projectsOf(item.uri.fsPath, [root]).length);
+  // The Pietto Models view: per project root, the latest `explain --project` result of its
+  // saved files. A root runs one explain at a time: a new run stops the current one, waits
+  // for it to exit and drops its result.
+  interface Listing {nodes?: readonly Node[]; generation: number; source?: vscode.CancellationTokenSource; done: Promise<void>}
+  const listings = new Map<string, Listing>();
+  const modelsChanged = new vscode.EventEmitter<void>();
+  const drop = (listing: Listing | undefined) => {
+    if (!listing) return;
+    listing.generation++;
+    listing.source?.cancel();
+  };
+  const list = (root: string) => {
+    const listing = listings.get(root) ?? {generation: 0, done: Promise.resolve()};
+    listings.set(root, listing);
+    drop(listing);
+    if (!vscode.workspace.isTrusted || !modelsView.visible) return;
+    const generation = listing.generation;
+    const source = listing.source = new vscode.CancellationTokenSource();
+    const {python, launcher, wsl} = interpreter();
+    listing.done = listing.done.then(async () => {
+      const nodes = source.token.isCancellationRequested ? undefined : await relationColumns(python, launcher, wsl ? toWsl(root) : root, source.token);
+      if (nodes && listing.generation === generation) { listing.nodes = nodes; modelsChanged.fire(); }
+    }).catch(error => output.appendLine(`Pietto Models: ${error}`));
+  };
+  const refreshModels = () => {
+    for (const listing of listings.values()) drop(listing);
+    for (const root of configuredRoots()) list(root);
+    modelsChanged.fire();
+  };
+  // A saved module or pietto.toml drops the root's running result at once and lists it again
+  // after the last save of a burst.
+  const savedRoots = new Set<string>();
+  const scheduledModels = debounce(restartDelayMs, () => {
+    for (const root of savedRoots) list(root);
+    savedRoots.clear();
+  });
+  const savedModel = (document: vscode.TextDocument) => {
+    if (document.uri.scheme !== 'file' || (path.extname(document.uri.fsPath) !== '.pietto' && path.basename(document.uri.fsPath) !== 'pietto.toml')) return;
+    for (const {root} of projectsOf(document.uri.fsPath, configuredRoots())) {
+      drop(listings.get(root));
+      savedRoots.add(root);
+      scheduledModels.schedule();
+    }
+  };
+  // The roots with unsaved files, whose node says that it shows the saved files.
+  let unsavedRoots = '';
+  const markUnsaved = () => {
+    const now = configuredRoots().filter(root => unsavedIn(root).length).join('\0');
+    if (now !== unsavedRoots) { unsavedRoots = now; modelsChanged.fire(); }
+  };
+  const models: vscode.TreeDataProvider<ModelItem> = {
+    onDidChangeTreeData: modelsChanged.event,
+    getChildren: item => {
+      if (!item) return vscode.workspace.isTrusted ? configuredRoots().map(root => ({root})) : [{label: 'Trust this workspace to list Pietto models.'}];
+      if (!('root' in item)) return [...item.children ?? []];
+      if (!listings.has(item.root)) list(item.root);
+      return [...listings.get(item.root)?.nodes ?? [{label: 'Running pietto explain --project…'}]];
+    },
+    getTreeItem: item => 'root' in item
+      ? Object.assign(new vscode.TreeItem(shown(item.root), vscode.TreeItemCollapsibleState.Expanded), {description: unsavedIn(item.root).length ? 'shows the saved files' : undefined})
+      : Object.assign(new vscode.TreeItem(item.label, item.children?.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None), {description: item.description}),
+  };
+  const modelsView = vscode.window.createTreeView('pietto.models', {treeDataProvider: models});
   const previewProviders = ['pietto-sql-preview', 'pietto-migration-preview'].map(scheme => vscode.workspace.registerTextDocumentContentProvider(scheme, {
     provideTextDocumentContent: uri => previews.get(uri.toString()),
   }));
@@ -160,7 +225,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (!projects.length) { void vscode.window.showInformationMessage('This file is not inside a project root of pietto.projectRoots. Run "Pietto: Select Explicit Project Root" first.'); return; }
     if (projects.length > 1) { void vscode.window.showErrorMessage(`This file belongs to two project roots: ${projects[0].root} and ${projects[1].root}. Keep one of them in projectRoots.`); return; }
     const [{root, module}] = projects;
-    const unsaved = () => vscode.workspace.textDocuments.filter(item => item.isDirty && item.uri.scheme === 'file' && projectsOf(item.uri.fsPath, [root]).length);
+    const unsaved = () => unsavedIn(root);
     if (unsaved().length) { void vscode.window.showInformationMessage(`Save the changed files of the project ${root} before previewing project SQL: ${unsaved().map(item => path.relative(root, item.uri.fsPath)).join(', ')}.`); return; }
     const argument = option(options, 'emissionContract');
     const contract = argument ?? vscode.workspace.getConfiguration('pietto', document.uri).get('emissionContract', '');
@@ -223,17 +288,20 @@ export function activate(context: vscode.ExtensionContext) {
       () => vscode.commands.executeCommand('vscode.diff', document.uri, migrated, `${name} ↔ pietto migrate (preview)`, {preview: true}),
     )) previews.delete(migrated.toString());
   };
-  context.subscriptions.push(output, ...previewProviders, {dispose: scheduled.cancel},
+  context.subscriptions.push(output, ...previewProviders, {dispose: scheduled.cancel}, modelsView, modelsChanged, {dispose: scheduledModels.cancel},
+    {dispose: () => { for (const listing of listings.values()) drop(listing); }},
+    modelsView.onDidChangeVisibility(event => { if (event.visible) refreshModels(); }),
     vscode.workspace.onDidCloseTextDocument(document => {
       if (document.uri.scheme === 'pietto-sql-preview' || document.uri.scheme === 'pietto-migration-preview') previews.delete(document.uri.toString());
+      markUnsaved();
     }),
-    vscode.workspace.onDidChangeTextDocument(event => staleProject(event.document)),
-    vscode.workspace.onDidSaveTextDocument(staleProject),
+    vscode.workspace.onDidChangeTextDocument(event => { staleProject(event.document); markUnsaved(); }),
+    vscode.workspace.onDidSaveTextDocument(document => { staleProject(document); savedModel(document); markUnsaved(); }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('pietto')) { previewEpoch++; scheduled.schedule(); }
+      if (event.affectsConfiguration('pietto')) { previewEpoch++; scheduled.schedule(); refreshModels(); }
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void restart()),
-    vscode.workspace.onDidGrantWorkspaceTrust(() => void restart()),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { void restart(); refreshModels(); }),
+    vscode.workspace.onDidGrantWorkspaceTrust(() => { void restart(); refreshModels(); }),
     vscode.languages.registerCodeActionsProvider({scheme: 'file', language: 'pietto'}, {
       provideCodeActions: (document, _range, actionContext) => quickFixes(actionContext.diagnostics, vscode.DiagnosticSeverity.Warning).map(([fix, diagnostics]) => {
         const action = new vscode.CodeAction(quickFixTitles[fix], vscode.CodeActionKind.QuickFix);
@@ -245,6 +313,7 @@ export function activate(context: vscode.ExtensionContext) {
       }),
     }, {providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]}),
     vscode.commands.registerCommand('pietto.restart', restart),
+    vscode.commands.registerCommand('pietto.refreshModels', refreshModels),
     vscode.commands.registerCommand('pietto.previewPostgresSql', () => preview('postgres', undefined)),
     vscode.commands.registerCommand('pietto.previewSql', (options?: unknown) => preview(undefined, options)),
     vscode.commands.registerCommand('pietto.previewProjectSql', (options?: unknown) => previewProject(options)),
@@ -279,8 +348,10 @@ export function activate(context: vscode.ExtensionContext) {
         if (config.get<string[]>('projectRoots', []).length) await config.update('projectRoots', [], vscode.ConfigurationTarget.WorkspaceFolder);
       }
     }));
+  // The view is declared for every workspace; it shows once a Pietto file has activated the extension.
+  void vscode.commands.executeCommand('setContext', 'pietto.activated', true);
   void restart();
-  return {get client() { return client; }, notices};
+  return {get client() { return client; }, notices, models};
 }
 
 export function deactivate(): Promise<void> { return stop(); }

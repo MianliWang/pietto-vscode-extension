@@ -21,6 +21,8 @@ export interface ProjectRequest {readonly root: string; readonly module: string;
 export const projectPreviewArguments = (launcher: string[], {root, module, dialect, contract}: ProjectRequest) => commandArguments(launcher,
   ['emit-sql', `--project=${root}`, '--all', `--module=${module}`, `--dialect=${dialect}`, `--emission-contract=${contract}`, '--format=json']);
 export const migrateArguments = (launcher: string[], source: string) => commandArguments(launcher, ['migrate', source]);
+// The relation columns of a schema_version 2 project (pietto.project-relation-columns.v1).
+export const explainArguments = (launcher: string[], root: string) => commandArguments(launcher, ['explain', `--project=${root}`, '--format=json']);
 
 // Restart triggers come in bursts (a checkout rewriting pietto.toml, a settings file saved
 // with several pietto.* changes), so one restart runs after the last of them.

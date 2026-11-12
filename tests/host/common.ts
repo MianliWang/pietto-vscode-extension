@@ -1,16 +1,17 @@
 import {readFileSync, readdirSync} from 'node:fs';
 import * as vscode from 'vscode';
-import {serverArguments} from '../../src/launch';
+import {commandArguments, serverArguments} from '../../src/launch';
+import {ModelItem} from '../../src/models';
 
 export interface Api {
   readonly client?: {initializeResult?: {serverInfo?: {name: string; version?: string}}};
   readonly notices: string[];
+  readonly models: vscode.TreeDataProvider<ModelItem>;
 }
 
-const script = serverArguments([]).at(-1)!;
-
-// The pietto lsp processes this extension host started, read from /proc (undefined off Linux).
-export function servers(): {pid: number; argv: string[]}[] | undefined {
+// The pietto lsp processes this extension host started, or with another script its other
+// pietto commands, read from /proc (undefined off Linux).
+export function servers(script = serverArguments([]).at(-1)!): {pid: number; argv: string[]}[] | undefined {
   if (process.platform !== 'linux') return undefined;
   const found: {pid: number; argv: string[]}[] = [];
   for (const name of readdirSync('/proc')) {
@@ -24,6 +25,8 @@ export function servers(): {pid: number; argv: string[]}[] | undefined {
   }
   return found;
 }
+
+export const explains = () => servers(commandArguments([], []).at(-1)!)?.filter(found => found.argv.includes('explain'));
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 

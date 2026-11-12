@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
-import {Api, codes, pietto, servers, sleep, span, waitFor} from './common';
+import {Node} from '../../src/models';
+import {Api, codes, explains, pietto, servers, sleep, span, waitFor} from './common';
 
 export async function run(): Promise<void> {
   const root = process.env.PIETTO_HOST_ROOT!;
@@ -361,13 +362,105 @@ export async function run(): Promise<void> {
     return {report: report.getText()};
   });
 
+  // The Pietto Models view of the emit root, through the provider that the view shows.
+  const emitRoot = {root: path.join(workspace, 'emit')};
+  const modelNodes = async () => (await api.models.getChildren(emitRoot) ?? []) as Node[];
+  const listed = (what: string, check: (nodes: Node[]) => boolean) => waitFor(what, async () => {
+    const nodes = await modelNodes();
+    return check(nodes) && nodes;
+  }, 60_000);
+  const id = {label: 'id: Int', description: 'non_null'};
+  const emitRelations = (large: Node[]) => [
+    {label: 'table active_items', description: 'models/items.pietto', children: [id, {label: 'label: Text', description: 'non_null'}]},
+    {label: 'query small_items', description: 'models/items.pietto', children: [id]},
+    {label: 'query large_items', description: 'models/blocked.pietto', children: large},
+  ];
+  const marked = async () => (await api.models.getTreeItem(emitRoot)).description;
+  const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+
+  await step('Pietto Models lists every table and query of a root with its columns, in project order', async () => {
+    await vscode.commands.executeCommand('pietto.models.focus');
+    assert.deepEqual(await api.models.getChildren(), [emitRoot]);
+    const nodes = await listed('the relations of the emit root', found => found.length === 3);
+    assert.deepEqual(nodes, emitRelations([id]));
+    assert.equal(await marked(), undefined);
+    return nodes;
+  });
+
+  await step('an unsaved module marks its root as showing the saved files; saving it lists the new column', async () => {
+    const document = await vscode.workspace.openTextDocument(blocked);
+    await vscode.window.showTextDocument(document);
+    const disk = document.getText();
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(blocked, document.positionAt(disk.length), '        doubled = id * 2\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await waitFor('the saved-files mark on the root', async () => await marked() === 'shows the saved files');
+    assert.deepEqual(await modelNodes(), emitRelations([id]));
+    const saved = performance.now();
+    assert.equal(await document.save(), true);
+    const nodes = await listed('the saved column', found => found[2]?.children?.length === 2);
+    const ms = Math.round(performance.now() - saved);
+    assert.deepEqual(nodes, emitRelations([id, {label: 'doubled: Int', description: 'unknown'}]));
+    assert.equal(await marked(), undefined);
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(blocked, new vscode.Range(document.positionAt(disk.length), document.positionAt(document.getText().length)));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    assert.equal(await document.save(), true);
+    assert.equal(readFileSync(blocked.fsPath, 'utf8'), disk);
+    await listed('the original columns again', found => found[2]?.children?.length === 1);
+    return {saveToColumnMs: ms};
+  });
+
+  if (process.platform === 'win32' || !servers()) console.log('SKIP one explain per root and a hidden view: they hold a POSIX stand-in interpreter and read /proc');
+  else {
+    await step('a root runs one explain at a time: a refresh stops the running one, and the next starts after it exits', async () => {
+      // A stand-in interpreter that holds each explain run until held-explain.go exists.
+      const held = path.join(root, '.local', 'held-explain');
+      const release = `${held}.go`;
+      const real = interpreter().get<string>('pythonPath', 'python');
+      writeFileSync(held, `#!/bin/sh\nfor arg; do if [ "$arg" = explain ]; then while [ ! -e ${quote(release)} ]; do sleep 0.05; done; fi; done\nexec ${quote(real)} "$@"\n`, {mode: 0o755});
+      rmSync(release, {force: true});
+      await interpreter().update('pythonPath', held, vscode.ConfigurationTarget.Workspace);
+      const first = await waitFor('one held explain', () => { const found = explains()!; return found.length === 1 && found[0]; }, 60_000);
+      await vscode.commands.executeCommand('pietto.refreshModels');
+      await vscode.commands.executeCommand('pietto.refreshModels');
+      let most = 0;
+      for (const end = Date.now() + 2000; Date.now() < end; await sleep(10)) most = Math.max(most, explains()!.length);
+      const last = await waitFor('the replacing held explain', () => { const found = explains()!; return found.length === 1 && found[0].pid !== first.pid && found[0]; }, 60_000);
+      assert.equal(most, 1, 'Never two explain processes for one root.');
+      writeFileSync(release, '');
+      await waitFor('the released explain to finish', () => explains()!.length === 0, 60_000);
+      assert.deepEqual(await modelNodes(), emitRelations([id]));
+      await interpreter().update('pythonPath', undefined, vscode.ConfigurationTarget.Workspace);
+      return {first: first.pid, last: last.pid, most};
+    });
+
+    await step('a hidden Pietto Models view runs no explain when a module of its root is saved', async () => {
+      await vscode.commands.executeCommand('workbench.action.closeSidebar');
+      await waitFor('no explain process', () => explains()!.length === 0, 60_000);
+      const document = await vscode.workspace.openTextDocument(blocked);
+      const disk = document.getText();
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(blocked, new vscode.Position(0, 0), '# saved while the view is hidden\n');
+      assert.equal(await vscode.workspace.applyEdit(edit), true);
+      assert.equal(await document.save(), true);
+      let most = 0;
+      for (const end = Date.now() + 2000; Date.now() < end; await sleep(10)) most = Math.max(most, explains()!.length);
+      assert.equal(most, 0, 'No explain while the view is hidden.');
+      const undo = new vscode.WorkspaceEdit();
+      undo.delete(blocked, new vscode.Range(0, 0, 1, 0));
+      assert.equal(await vscode.workspace.applyEdit(undo), true);
+      assert.equal(await document.save(), true);
+      assert.equal(readFileSync(blocked.fsPath, 'utf8'), disk);
+    });
+  }
+
   // A stand-in interpreter that runs the real one, but first marks each emit-sql run in
   // gated-python.started and holds it until gated-python.go exists.
   const gate = process.platform === 'win32' ? undefined : path.join(root, '.local', 'gated-python');
   const [started, go] = [`${gate}.started`, `${gate}.go`];
   if (!gate) console.log('SKIP whether Pietto runs for a refused project preview, and a project change while it runs: the stand-in interpreter is a POSIX shell script');
   else {
-    const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
     writeFileSync(gate, `#!/bin/sh\nfor arg; do if [ "$arg" = emit-sql ]; then : > ${quote(started)}; while [ ! -e ${quote(go)} ]; do sleep 0.05; done; fi; done\n`
       + `exec ${quote(interpreter().get<string>('pythonPath', 'python'))} "$@"\n`, {mode: 0o755});
     rmSync(started, {force: true});

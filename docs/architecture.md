@@ -11,6 +11,7 @@ The extension is declarative language support plus one language client.
 | Hover, definition and document symbols | Standard LSP from `pietto lsp`, through `vscode-languageclient` | yes |
 | Single-file SQL preview | `pietto emit-sql FILE --dialect {postgres,mysql} --format json` | yes |
 | Project SQL preview | `pietto emit-sql --project ROOT --all --module MODULE --dialect {postgres,mysql} --emission-contract FILE --format json` | yes |
+| Pietto Models view | `src/models.ts` on `pietto explain --project ROOT --format json` (`pietto.project-relation-columns.v1`, alpha) | yes |
 | Quick fixes | `src/actions.ts` on the public diagnostic codes `PIE-S2708` and `PIE-P1000`; the migration preview runs `pietto migrate FILE` | yes |
 
 ## Grammar and snippets
@@ -175,6 +176,57 @@ Every virtual document is read-only and holds exactly one artifact's SQL or
 one report. The previews never write a source file, execute SQL, format a
 buffer, choose a project root or contract, or call private core APIs.
 
+## Pietto Models
+
+A tree view in the Explorer, `pietto.models`, shown once a Pietto document
+has activated the extension. Its top-level nodes are the resolved roots of
+`pietto.projectRoots`; with none, its welcome content offers
+`pietto.selectProject`. There is no single-file view.
+
+Each root runs `explain --project=ROOT --format=json` exactly as the project
+preview runs Pietto: the selected interpreter with `-I`, the value joined to
+its option, the `/mnt` mapping for a `wsl.exe` launcher, the 64 MiB output
+limit and the 60 s deadline, and any error output fails the run. The column
+view reads the project from disk, so the root node says `shows the saved
+files` while one of its files is unsaved.
+
+`src/models.ts` reads the document strictly and never shows part of one:
+
+- `format` must be `pietto.project-relation-columns.v1`, or
+  `pietto.project-explain.v1`, which a `schema_version = 4` project answers
+  (one line: the view does not apply) and which carries configuration and
+  root failures (one `project error: CODE: MESSAGE` line each). Any other
+  format is refused.
+- The exit code must be the one `ok` documents: 0 for `true`, 1 or 2 for
+  `false`. With `ok` true, `relations` is listed and `cli_errors` must be
+  empty; with `ok` false, `relations` must be `null`, and the root shows each
+  CLI error as `project error: KIND: MESSAGE` and the number of diagnostics,
+  which the language server already shows in Problems.
+- Relations keep the document order and identity: `kind name` with the
+  module as description, nothing merged, sorted or dropped. A column is
+  `name: Type` with its nullability verbatim; `enum` and `shape` add their
+  declaring module, `type_alias` and `unknown` their kind, and a `collection`
+  lists its element columns, which must not be collections.
+- An unknown relation kind, type kind or nullability, a missing or mistyped
+  field it reads, invalid JSON, an exit code that disagrees with `ok`, error
+  output, or output over the limit replaces the root's children with one line
+  that names the reason. Fields it does not read are ignored.
+- Every name, path and message is escaped as the previews escape text. Tree
+  items use plain-text labels and descriptions; nothing is a Markdown or
+  command link, and a node does not navigate, because the column view has no
+  source locations.
+
+Runs happen only while the view is visible and the workspace is trusted: when
+the view becomes visible, on **Pietto: Refresh Models**, on a change of any
+`pietto.*` setting, of workspace folders or of trust, and 500 ms after the
+last save of a `.pietto` file or `pietto.toml` inside a root. A save stops the
+root's running `explain` at once and drops its result. A root has at most one
+`explain` process: each new run first cancels the previous one and starts
+only after its process has exited; a run that a newer trigger replaced shows
+nothing. A cancelled or timed-out run of a preview or of the view counts as
+ended only once its process has exited. A hidden view keeps its last result
+and lists every root again when it becomes visible.
+
 ## Quick fixes
 
 One code action provider for `pietto` documents of the `file` scheme (an
@@ -224,16 +276,17 @@ extension runs inside WSL (`extensionKind: workspace`) and needs no mapping.
 `capabilities.untrustedWorkspaces` is `limited`. In Restricted Mode the
 extension starts no process and ignores `pietto.pythonPath` and
 `pietto.pythonArguments` from the workspace (`restrictedConfigurations`).
-Highlighting, snippets and folding work.
+Highlighting, snippets and folding work. The Pietto Models view shows one line
+that asks for trust and runs nothing.
 
 ## What the extension does not do
 
-No completion, formatter, tree views, connection configuration, telemetry,
+No completion, formatter, connection view or configuration, telemetry,
 source upload, automatic installation, or quick fix that edits a Pietto file
 or applies a text edit; the one quick fix that writes anything, **Select
 project root**, writes only the `pietto.projectRoots` setting of the folder
 you pick. The adapter of 0.1.0 and 0.1.1 that provided broader hover,
 completion, definition, outline and the model and connection views imported
-private Pietto modules, so it remains removed. The current standard-LSP navigation uses only
-the public core contract and does not restore those views or broader binding
-categories.
+private Pietto modules, so it remains removed. The current standard-LSP
+navigation and the Pietto Models view use only public core contracts; they do
+not restore the connection view or broader binding categories.

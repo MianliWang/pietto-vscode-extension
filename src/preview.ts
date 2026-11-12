@@ -33,9 +33,9 @@ export type ProjectPreviewResult =
   | {readonly status: 'refused'; readonly message: string}
   | Stopped;
 
-interface Cancellation {onCancellationRequested(listener: () => void): {dispose(): void}}
+export interface Cancellation {onCancellationRequested(listener: () => void): {dispose(): void}}
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 function message(value: unknown): string | undefined {
   if (!isRecord(value) || typeof value.message !== 'string') return undefined;
@@ -93,7 +93,7 @@ function emission(value: unknown): {readonly status: EmissionStatus; readonly fi
 // A value as Pietto's text presentation prints it: Python's str() (null is None), with C0
 // controls and DEL as \xNN and C1, separator and bidi controls as \uNNNN, so a path or message
 // can neither break its line nor reorder it.
-const shown = (value: unknown) => (value === null || value === undefined ? 'None' : String(value))
+export const shown = (value: unknown) => (value === null || value === undefined ? 'None' : String(value))
   .replace(/[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, character => {
     const code = character.charCodeAt(0);
     return code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, '0')}` : `\\u${code.toString(16).padStart(4, '0')}`;
@@ -181,7 +181,7 @@ function execute(python: string, args: string[], maxBytes: number, timeoutMs: nu
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     const cancellation = token.onCancellationRequested(() => controller.abort());
     try {
-      execFile(python, args, {
+      const child = execFile(python, args, {
         encoding: 'utf8',
         maxBuffer: maxBytes,
         signal: controller.signal,
@@ -190,7 +190,12 @@ function execute(python: string, args: string[], maxBytes: number, timeoutMs: nu
       }, (error, stdout, stderr) => {
         clearTimeout(timeout);
         cancellation.dispose();
-        resolve(error?.name === 'AbortError' ? {status: timedOut ? 'timeout' : 'cancelled'} : {status: 'done', error, stdout, stderr});
+        if (error?.name !== 'AbortError') { resolve({status: 'done', error, stdout, stderr}); return; }
+        // Node reports an abort as soon as it signals the process; a stopped run ends only once
+        // the process has exited, so the next run of the same caller never overlaps it.
+        const stopped = {status: timedOut ? 'timeout' : 'cancelled'} as const;
+        if (child.exitCode !== null || child.signalCode !== null) resolve(stopped);
+        else child.once('exit', () => resolve(stopped));
       });
     } catch (error) {
       // An interpreter that cannot be started at all, such as an empty pietto.pythonPath.
@@ -203,9 +208,9 @@ function execute(python: string, args: string[], maxBytes: number, timeoutMs: nu
 
 type Run = {readonly status: 'done'; readonly exit: number | null; readonly stdout: string} | Stopped;
 
-// emit-sql writes its whole result to stdout, so any error output, or more output than the
-// limit, fails the preview.
-async function run(python: string, args: string[], what: string, maxBytes: number, timeoutMs: number, token: Cancellation): Promise<Run> {
+// emit-sql and explain write their whole result to stdout, so any error output, or more
+// output than the limit, fails the run.
+export async function run(python: string, args: string[], what: string, maxBytes: number, timeoutMs: number, token: Cancellation): Promise<Run> {
   const ran = await execute(python, args, maxBytes, timeoutMs, token);
   if (ran.status === 'timeout') return {status: 'failed', message: `Pietto ${what} timed out after ${timeoutMs / 1000} seconds.`};
   if (ran.status !== 'done') return ran;

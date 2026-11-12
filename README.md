@@ -192,6 +192,45 @@ settings are per resource, so each workspace folder can have its own:
 }
 ```
 
+## Pietto Models
+
+The **Pietto Models** view in the Explorer shows, under each root of
+`pietto.projectRoots`, every table and query of that `schema_version = 2`
+project with its output columns. It is read-only and reads only the saved
+files: it runs the public
+
+```text
+pietto explain --project=ROOT --format=json
+```
+
+through the selected interpreter and shows its
+[relation columns](https://github.com/MianliWang/pietto/blob/v0.1.10/docs/spec/project-relation-columns-v1.md)
+document, `pietto.project-relation-columns.v1`, which pietto 0.1.10 has.
+
+- Tables and queries appear in project order as `table NAME` or
+  `query NAME`, with their module path. Each column is `NAME: TYPE` with its
+  nullability as Pietto computes it: `non_null`, `nullable` or `unknown`. An
+  enum or shape column also names the module that declares it, and a
+  collection column expands to its element columns.
+- A project whose check fails shows how many diagnostics it has (they are in
+  Problems) and no table or query. A project error is one line,
+  `project error: KIND: MESSAGE`. A `schema_version = 4` project gets one line
+  that says the view does not apply to it.
+- A root with unsaved files is marked `shows the saved files`.
+- The view runs Pietto when it becomes visible, half a second after the last
+  save of a `.pietto` file or `pietto.toml` of a root, when a `pietto.*`
+  setting changes, and with **Pietto: Refresh Models** (the refresh button of
+  the view). It never runs while you type or while the view is hidden. A root
+  runs one `explain` at a time: a new trigger stops the running one, and a
+  result that a save has made stale is dropped.
+- Nodes do not navigate: the column view has no source locations.
+
+The column view is alpha: until Pietto freezes its public formats, a Pietto
+release may change it. Output that the extension cannot read, such as an
+unknown format, type kind or nullability, an exit code that disagrees with
+`ok`, or any error output, replaces the whole root with one line that says so;
+the view never shows part of such a result.
+
 ## Quick fixes
 
 The lightbulb offers two quick fixes. They are chosen by a diagnostic's public
@@ -221,7 +260,8 @@ editor-only messages above, which have no code, get none.
 
 In an untrusted workspace you get highlighting, snippets and folding. No
 process is started, and `pietto.pythonPath` and `pietto.pythonArguments` from
-the workspace settings are ignored. Trusting the workspace starts the server.
+the workspace settings are ignored. The **Pietto Models** view only asks you
+to trust the workspace. Trusting the workspace starts the server.
 
 ## Windows and WSL
 
@@ -269,8 +309,11 @@ those private modules could break them. Diagnostics now come from
 `pietto lsp`, a public Pietto contract. The removed features come back when
 Pietto has public contracts for them. The current standard-LSP hover,
 definition and document outline are separate, exact-fact features; they do not
-restore the removed adapter or its broader navigation. Project roots now live in the
-`pietto.projectRoots` setting; the roots that 0.1.0 and 0.1.1 kept in
+restore the removed adapter or its broader navigation. The
+[Pietto Models](#pietto-models) view is rebuilt on Pietto's public relation
+columns, without navigation; the **Pietto Connections** view, the connection
+preview and **Copy Qualified Field Path** stay removed. Project roots now live
+in the `pietto.projectRoots` setting; the roots that 0.1.0 and 0.1.1 kept in
 workspace state are not carried over, so run **Pietto: Select Explicit Project
 Root** again.
 

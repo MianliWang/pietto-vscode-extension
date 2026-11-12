@@ -108,8 +108,37 @@
       {
         "command": "pietto.previewProjectSql",
         "title": "Pietto: Preview Project SQL (Module)"
+      },
+      {
+        "command": "pietto.refreshModels",
+        "title": "Pietto: Refresh Models",
+        "icon": "$(refresh)"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "pietto.models",
+          "name": "Pietto Models",
+          "when": "pietto.activated"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pietto.models",
+        "contents": "No Pietto project root is selected. This view lists the columns of every table and query of each root in pietto.projectRoots, from its saved files.\n[Select Project Root](command:pietto.selectProject)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pietto.refreshModels",
+          "when": "view == pietto.models",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Pietto",
       "properties": {
