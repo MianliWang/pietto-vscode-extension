@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run lint
+      - name: Install pietto 0.1.10 from PyPI
+        run: |
+          python -m venv "$RUNNER_TEMP/pietto"
+          "$RUNNER_TEMP/pietto/bin/python" -m pip install pietto==0.1.10
+          echo "PIETTO_TEST_PYTHON=$RUNNER_TEMP/pietto/bin/python" >> "$GITHUB_ENV"
+      # The host suites need a display, so they run locally only (README).
+      - run: node --test out/tests/*.test.js

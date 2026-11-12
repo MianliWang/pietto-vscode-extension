@@ -326,6 +326,13 @@ isolated profile and runs the host tests against it. Press F5 for an isolated
 development host. See [verification](docs/verification.md) and
 [architecture](docs/architecture.md).
 
+CI (`.github/workflows/ci.yml`) runs on every push and pull request to
+`main`: on Ubuntu 26.04 with Node 22 it runs `npm ci --ignore-scripts`, the
+build, the lint and the Node tests of `npm test`, with `PIETTO_TEST_PYTHON`
+set to a Python 3.13 virtual environment that has pietto 0.1.10 from PyPI.
+The host suites (`test:host`, `test:restricted`, `test:vsix`) need a display,
+so CI does not run them; run them locally.
+
 ## Limits
 
 - One server per window. `pietto.pythonPath` and `pietto.pythonArguments` are
