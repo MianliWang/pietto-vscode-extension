@@ -32,9 +32,11 @@ export async function run(): Promise<void> {
   // The project root '.' is selected, so a broken trust gate would run explain on it.
   await vscode.commands.executeCommand('pietto.models.focus');
   await vscode.commands.executeCommand('pietto.refreshModels');
-  await sleep(2000);
+  // An explain lasts about a second, so poll through the window rather than look once at its end.
+  let most = 0;
+  for (const end = Date.now() + 2000; Date.now() < end; await sleep(10)) most = Math.max(most, explains()?.length ?? 0);
   assert.deepEqual(await api.models.getChildren(), [{label: 'Trust this workspace to list Pietto models.'}]);
-  assert.deepEqual(explains() ?? [], [], 'Restricted Mode runs no explain.');
+  assert.equal(most, 0, 'Restricted Mode runs no explain.');
   assert.deepEqual(api.notices, []);
   assert.ok(!vscode.workspace.getConfiguration('pietto').get<string>('pythonPath')?.includes('workspace-selected-python'), 'The workspace interpreter setting is ignored.');
   const completion = await vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', file, new vscode.Position(document.lineCount - 1, 0));

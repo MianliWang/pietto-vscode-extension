@@ -414,11 +414,12 @@ export async function run(): Promise<void> {
   if (process.platform === 'win32' || !servers()) console.log('SKIP one explain per root and a hidden view: they hold a POSIX stand-in interpreter and read /proc');
   else {
     await step('a root runs one explain at a time: a refresh stops the running one, and the next starts after it exits', async () => {
-      // A stand-in interpreter that holds each explain run until held-explain.go exists.
+      // A stand-in interpreter that holds each explain run until held-explain.go exists and,
+      // stopped, exits only a second later, so a next run that does not wait would overlap it.
       const held = path.join(root, '.local', 'held-explain');
       const release = `${held}.go`;
       const real = interpreter().get<string>('pythonPath', 'python');
-      writeFileSync(held, `#!/bin/sh\nfor arg; do if [ "$arg" = explain ]; then while [ ! -e ${quote(release)} ]; do sleep 0.05; done; fi; done\nexec ${quote(real)} "$@"\n`, {mode: 0o755});
+      writeFileSync(held, `#!/bin/sh\ntrap "sleep 1; exit 143" TERM\nfor arg; do if [ "$arg" = explain ]; then while [ ! -e ${quote(release)} ]; do sleep 0.05; done; fi; done\nexec ${quote(real)} "$@"\n`, {mode: 0o755});
       rmSync(release, {force: true});
       await interpreter().update('pythonPath', held, vscode.ConfigurationTarget.Workspace);
       const first = await waitFor('one held explain', () => { const found = explains()!; return found.length === 1 && found[0]; }, 60_000);
