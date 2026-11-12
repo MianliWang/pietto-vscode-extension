@@ -9,7 +9,8 @@ export interface SqlArtifact {
   readonly sql: string;
 }
 
-type Stopped = {readonly status: 'failed'; readonly message: string} | {readonly status: 'cancelled'};
+export type Failed = {readonly status: 'failed'; readonly message: string};
+export type Stopped = Failed | {readonly status: 'cancelled'};
 
 export type PreviewResult =
   | {readonly status: 'ready'; readonly artifacts: SqlArtifact[]}
@@ -42,14 +43,16 @@ function message(value: unknown): string | undefined {
   return typeof value.code === 'string' ? `${value.code}: ${value.message}` : value.message;
 }
 
-// Single-file CLI JSON v1 for the requested dialect. Fields it does not read are ignored.
-export function parsePreview(stdout: string, dialect: Dialect, source?: string): PreviewResult {
-  const name = dialectNames[dialect];
+export type Envelope = {readonly ok: boolean; readonly path: string | null; readonly diagnostics: unknown[]; readonly cli_errors: unknown[]; readonly artifacts: unknown[]};
+
+// A single-file CLI JSON v1 emit-sql envelope for the requested dialect; `what` names the
+// command in a message. Fields it does not read are ignored.
+export function envelope(stdout: string, dialect: Dialect, what: string): {readonly status: 'done'; readonly value: Envelope} | Failed {
   let value: unknown;
   try {
     value = JSON.parse(stdout);
   } catch {
-    return {status: 'failed', message: `Pietto did not return valid JSON for ${name} SQL preview.`};
+    return {status: 'failed', message: `Pietto did not return valid JSON for ${what}.`};
   }
   if (!isRecord(value)
     || value.schema_version !== 1
@@ -63,6 +66,14 @@ export function parsePreview(stdout: string, dialect: Dialect, source?: string):
     || !Array.isArray(value.artifacts)) {
     return {status: 'failed', message: 'Pietto returned an unsupported emit-sql JSON response.'};
   }
+  return {status: 'done', value: value as Envelope};
+}
+
+export function parsePreview(stdout: string, dialect: Dialect, source?: string): PreviewResult {
+  const name = dialectNames[dialect];
+  const parsed = envelope(stdout, dialect, `${name} SQL preview`);
+  if (parsed.status === 'failed') return parsed;
+  const {value} = parsed;
   const artifacts: SqlArtifact[] = [];
   for (const artifact of value.artifacts) {
     if (!isRecord(artifact) || typeof artifact.kind !== 'string' || typeof artifact.name !== 'string' || typeof artifact.sql !== 'string') {
@@ -82,9 +93,11 @@ const statuses: readonly unknown[] = ['VERIFIED', 'BLOCKED', 'INPUT_REJECTED'] s
 const isStatus = (value: unknown): value is EmissionStatus => statuses.includes(value);
 const exits: Record<EmissionStatus, number> = {VERIFIED: 0, BLOCKED: 1, INPUT_REJECTED: 2};
 
+export interface Emission {readonly status: EmissionStatus; readonly fields: Record<string, unknown>}
+
 // A complete single-owner pietto.sql-emission.v1 or v2 document: VERIFIED with its SQL, or a
 // failure with its blockers, diagnostics and CLI errors. Fields it does not read are ignored.
-function emission(value: unknown): {readonly status: EmissionStatus; readonly fields: Record<string, unknown>} | undefined {
+function emission(value: unknown): Emission | undefined {
   if (!isRecord(value) || (value.format !== 'pietto.sql-emission.v1' && value.format !== 'pietto.sql-emission.v2') || !isStatus(value.status)) return undefined;
   const complete = value.status === 'VERIFIED' ? typeof value.sql === 'string' : ['blockers', 'diagnostics', 'cli_errors'].every(key => Array.isArray(value[key]));
   return complete ? {status: value.status, fields: value} : undefined;
@@ -120,20 +133,21 @@ function problems(document: Record<string, unknown>): string[] {
 }
 const report = (heading: string, document: Record<string, unknown>) => [heading, `${document.format} ${document.status}`, ...problems(document)].join('\n') + '\n';
 // The batch status that items derive: any INPUT_REJECTED, else any BLOCKED, else VERIFIED.
-const aggregate = (items: EmissionItem[]): EmissionStatus =>
+const aggregate = (items: readonly {readonly status: EmissionStatus}[]): EmissionStatus =>
   items.some(item => item.status === 'INPUT_REJECTED') ? 'INPUT_REJECTED' : items.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : 'VERIFIED';
 
-// The pietto.sql-emission.batch.v1 document of one module. A result is used only when the exit
-// code is the one its status documents, the status is the one its failure document or its
-// items give, and only for the module and dialect requested.
-export function parseProjectPreview(stdout: string, exit: number | null, module: string, dialect: Dialect): ProjectPreviewResult {
+export interface BatchItem extends Emission {readonly owner: {readonly kind: string; readonly module: string; readonly name: string}}
+
+// A pietto.sql-emission.batch.v1 document; `what` names the command in a message. It is used
+// only when the exit code is the one its status documents and the status is the one its
+// failure document, or else its items, give.
+export function parseBatch(stdout: string, exit: number | null, what: string): {readonly status: 'done'; readonly failure: Emission | null; readonly items: BatchItem[]} | Failed {
   const unsupported = {status: 'failed', message: 'Pietto returned an unsupported project emit-sql JSON response.'} as const;
-  const name = dialectNames[dialect];
   let value: unknown;
   try {
     value = JSON.parse(stdout);
   } catch {
-    return {status: 'failed', message: `Pietto did not return valid JSON for project ${name} SQL preview.`};
+    return {status: 'failed', message: `Pietto did not return valid JSON for ${what}.`};
   }
   if (!isRecord(value)
     || value.format !== 'pietto.sql-emission.batch.v1'
@@ -142,29 +156,41 @@ export function parseProjectPreview(stdout: string, exit: number | null, module:
     || (value.failure !== null && !isRecord(value.failure))) {
     return unsupported;
   }
-  if (exit !== exits[value.status]) return {status: 'failed', message: `Pietto stopped before project ${name} SQL preview completed.`};
+  if (exit !== exits[value.status]) return {status: 'failed', message: `Pietto stopped before ${what} completed.`};
   if (value.failure !== null) {
     const failure = emission(value.failure);
-    if (!failure || failure.status !== value.status || failure.status === 'VERIFIED' || value.items.length) return unsupported;
-    if (failure.status === 'BLOCKED') return {status: 'blocked', report: report(`${shown(module)}, ${name}`, failure.fields)};
-    const lines = problems(failure.fields);
-    return {status: 'refused', message: lines.length ? lines.join('\n') : `Pietto refused to emit project ${name} SQL.`};
+    return !failure || failure.status !== value.status || failure.status === 'VERIFIED' || value.items.length ? unsupported : {status: 'done', failure, items: []};
   }
-  const items: EmissionItem[] = [];
+  const items: BatchItem[] = [];
   for (const item of value.items) {
     const owner = isRecord(item) && isRecord(item.owner) ? item.owner : undefined;
     const document = isRecord(item) ? emission(item.document) : undefined;
     if (!owner || !document || typeof owner.kind !== 'string' || typeof owner.name !== 'string' || typeof owner.module !== 'string') {
       return {status: 'failed', message: 'Pietto returned an invalid SQL emission item.'};
     }
-    const target = document.fields.target;
-    if (owner.module !== module || (document.status === 'VERIFIED' && !(isRecord(target) && target.family === dialect))) {
-      return {status: 'failed', message: 'Pietto project SQL preview returned a result for a different module or dialect.'};
-    }
-    items.push({kind: owner.kind, name: owner.name, status: document.status,
-      text: document.status === 'VERIFIED' ? String(document.fields.sql) : report(`${shown(owner.kind)} ${shown(owner.name)} in ${shown(module)}, ${name}`, document.fields)});
+    items.push({owner: {kind: owner.kind, module: owner.module, name: owner.name}, ...document});
   }
-  return aggregate(items) === value.status ? {status: 'ready', items} : unsupported;
+  return aggregate(items) === value.status ? {status: 'done', failure: null, items} : unsupported;
+}
+
+// A VERIFIED document has the requested target family.
+export const sameDialect = ({status, fields}: Emission, dialect: Dialect) => status !== 'VERIFIED' || (isRecord(fields.target) && fields.target.family === dialect);
+
+// The batch document of one module, used only for the module and dialect requested.
+export function parseProjectPreview(stdout: string, exit: number | null, module: string, dialect: Dialect): ProjectPreviewResult {
+  const name = dialectNames[dialect];
+  const batch = parseBatch(stdout, exit, `project ${name} SQL preview`);
+  if (batch.status === 'failed') return batch;
+  if (batch.failure?.status === 'BLOCKED') return {status: 'blocked', report: report(`${shown(module)}, ${name}`, batch.failure.fields)};
+  if (batch.failure) {
+    const lines = problems(batch.failure.fields);
+    return {status: 'refused', message: lines.length ? lines.join('\n') : `Pietto refused to emit project ${name} SQL.`};
+  }
+  if (batch.items.some(item => item.owner.module !== module || !sameDialect(item, dialect))) {
+    return {status: 'failed', message: 'Pietto project SQL preview returned a result for a different module or dialect.'};
+  }
+  return {status: 'ready', items: batch.items.map(({owner, status, fields}) => ({kind: owner.kind, name: owner.name, status,
+    text: status === 'VERIFIED' ? String(fields.sql) : report(`${shown(owner.kind)} ${shown(owner.name)} in ${shown(module)}, ${name}`, fields)}))};
 }
 
 type Executed =

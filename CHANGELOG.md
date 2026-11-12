@@ -36,6 +36,19 @@
   document is refused. Both previews ignore JSON fields they do not read and
   refuse an unknown document format. Both need pietto 0.1.10, like the
   language server.
+- Target diagnostics, an interim extension feature behind the new
+  `pietto.targetDiagnostics` setting (off by default): after a save, the
+  extension runs `pietto emit-sql` for the `pietto.sqlDialect` target, over
+  every public table and query of a project root with its
+  `pietto.emissionContract` (a root without one is skipped), or for a file
+  outside every root, and shows its backend refusals (`PIE-B…`) and its own
+  errors as Warnings in their own collection, with the source
+  `pietto emit-sql (DIALECT)`. A refusal without a location is shown at the
+  start of its module, named by its table or query. A table, query or file
+  with a check error gets nothing, since the language server reports it; a
+  warning does not hide its refusals. An edit clears the entries of its root
+  until the next save, and a stale result is dropped. Nothing runs in
+  Restricted Mode. The language server is unchanged.
 - Quick fixes keyed on public diagnostic codes, never on message text:
   `PIE-S2708` (the single-file Warning at an import or export) offers
   **Select project root**, which writes the chosen folder to

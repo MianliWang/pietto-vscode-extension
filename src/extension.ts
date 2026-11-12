@@ -2,11 +2,17 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import {ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
+import {readFile} from 'node:fs/promises';
 import {LanguageClient} from 'vscode-languageclient/node';
 import {quickFixes, quickFixTitles} from './actions';
 import {debounce, Dialect, fromWsl, isDialect, isWslLauncher, probe, projectsOf, resolveRoots, serverArguments, strings, toWsl} from './launch';
 import {ModelItem, Node, relationColumns} from './models';
 import {dialectNames, previewMigration, previewProjectSql, previewSql, showIfCurrent, shown} from './preview';
+import {fileTargets, Location, Problem, projectTargets, range, sourceLines} from './target';
+
+// A scope of target diagnostics: a project root, or a Pietto file outside every root.
+type Scope = {readonly kind: 'root' | 'file'; readonly path: string};
+const keyOf = ({kind, path: scope}: Scope) => `${kind}:${scope}`;
 
 let client: LanguageClient | undefined;
 let server: ChildProcess | undefined;
@@ -262,6 +268,87 @@ export function activate(context: vscode.ExtensionContext) {
   const staleProject = (document: vscode.TextDocument) => {
     if (projectPreview && document.uri.scheme === 'file' && projectsOf(document.uri.fsPath, [projectPreview.root]).length) projectPreview.stale = true;
   };
+  // Target diagnostics (pietto.targetDiagnostics): emit-sql of a scope's saved files after a
+  // save, as Warnings in their own collection. An edit of a file of the scope clears them, and
+  // a run that a later save replaces or an edit makes stale shows nothing.
+  const targets = vscode.languages.createDiagnosticCollection('pietto-target');
+  const targetResults = new Map<string, Map<string, vscode.Diagnostic[]>>();
+  const targetRuns = new Map<string, vscode.CancellationTokenSource>();
+  const targetTimers = new Map<string, {schedule(): void; cancel(): void}>();
+  // The scopes whose results a file can change: each root that holds it as a Pietto file, its
+  // pietto.toml or its emission contract, else a Pietto file on its own.
+  const scopesOf = (document: vscode.TextDocument): Scope[] => {
+    if (document.uri.scheme !== 'file') return [];
+    const projects = projectsOf(document.uri.fsPath, configuredRoots());
+    if (!projects.length) return document.languageId === 'pietto' ? [{kind: 'file', path: document.uri.fsPath}] : [];
+    return projects.filter(({root, module}) => document.languageId === 'pietto' || path.basename(module) === 'pietto.toml'
+      || module === vscode.workspace.getConfiguration('pietto', vscode.Uri.file(root)).get('emissionContract')).map(({root}) => ({kind: 'root', path: root}));
+  };
+  // Each file shows the results of every scope that names it, in scope order.
+  const publishTargets = (key: string, found = new Map<string, vscode.Diagnostic[]>()) => {
+    const uris = new Set([...targetResults.get(key)?.keys() ?? [], ...found.keys()]);
+    if (found.size) targetResults.set(key, found);
+    else targetResults.delete(key);
+    for (const uri of uris) targets.set(vscode.Uri.parse(uri), [...targetResults.values()].flatMap(result => result.get(uri) ?? []));
+  };
+  const stopTargets = (key: string) => {
+    targetTimers.get(key)?.cancel();
+    targetRuns.get(key)?.cancel();
+    targetRuns.delete(key);
+    publishTargets(key);
+  };
+  const clearTargets = () => {
+    for (const key of new Set([...targetResults.keys(), ...targetRuns.keys(), ...targetTimers.keys()])) stopTargets(key);
+  };
+  const runTarget = async (scope: Scope, key: string) => {
+    targetRuns.get(key)?.cancel();
+    const config = vscode.workspace.getConfiguration('pietto', vscode.Uri.file(scope.kind === 'root' ? path.join(scope.path, 'pietto.toml') : scope.path));
+    const dialect = config.get('sqlDialect', 'postgres');
+    const contract = config.get('emissionContract', '');
+    // emit-sql reads the disk, so a scope with an unsaved file gets no result.
+    const unsaved = vscode.workspace.textDocuments.some(document => document.isDirty && scopesOf(document).some(other => keyOf(other) === key));
+    if (!vscode.workspace.isTrusted || config.get('targetDiagnostics') !== true || !isDialect(dialect) || unsaved
+      || (scope.kind === 'root' && (typeof contract !== 'string' || !contract.trim()))) { stopTargets(key); return; }
+    const run = new vscode.CancellationTokenSource();
+    targetRuns.set(key, run);
+    const current = () => targetRuns.get(key) === run;
+    const {python, launcher, wsl} = interpreter();
+    const result = scope.kind === 'root'
+      ? await projectTargets(python, launcher, {root: wsl ? toWsl(scope.path) : scope.path, dialect, contract}, run.token)
+      : await fileTargets(python, launcher, wsl ? toWsl(scope.path) : scope.path, dialect, run.token);
+    if (result.status === 'cancelled' || !current()) return;
+    // A run that fails, or output this extension cannot read, gives one entry and no partial result.
+    const problems: Problem[] = result.status === 'ready' ? result.problems : [{path: null, location: null, message: result.message, related: []}];
+    const fileOf = (relative: string | null) => scope.kind === 'file' ? scope.path : path.join(scope.path, ...(relative ?? 'pietto.toml').split('/'));
+    const lines = new Map<string, string[]>();
+    for (const file of new Set(problems.flatMap(problem => [problem.path, ...problem.related.map(item => item.path)]).map(fileOf))) {
+      lines.set(file, sourceLines(await readFile(file, 'utf8').catch(() => '')));
+    }
+    if (!current()) return;
+    const at = (relative: string | null, location: Location | null) => {
+      const file = fileOf(relative);
+      return new vscode.Location(vscode.Uri.file(file), new vscode.Range(...range(lines.get(file)!, location)));
+    };
+    const found = new Map<string, vscode.Diagnostic[]>();
+    for (const problem of problems) {
+      const {uri, range: span} = at(problem.path, problem.location);
+      const diagnostic = new vscode.Diagnostic(span, problem.message, vscode.DiagnosticSeverity.Warning);
+      diagnostic.source = `pietto emit-sql (${dialect})`;
+      diagnostic.code = problem.code;
+      if (problem.related.length) diagnostic.relatedInformation = problem.related.map(item => new vscode.DiagnosticRelatedInformation(at(item.path, item.location), 'Related location'));
+      found.set(uri.toString(), [...found.get(uri.toString()) ?? [], diagnostic]);
+    }
+    targetRuns.delete(key);
+    publishTargets(key, found);
+  };
+  const scheduleTargets = (document: vscode.TextDocument) => {
+    for (const scope of scopesOf(document)) {
+      const key = keyOf(scope);
+      const timer = targetTimers.get(key) ?? debounce(restartDelayMs, () => void runTarget(scope, key));
+      targetTimers.set(key, timer);
+      timer.schedule();
+    }
+  };
   // The PIE-P1000 quick fix: `pietto migrate FILE` of the saved file, shown beside it in a
   // diff editor whose migrated side is a read-only virtual document. Nothing is written.
   const migration = async (target?: vscode.Uri) => {
@@ -291,16 +378,31 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(output, ...previewProviders, {dispose: scheduled.cancel}, modelsView, modelsChanged, {dispose: scheduledModels.cancel},
     {dispose: () => { for (const listing of listings.values()) drop(listing); }},
     modelsView.onDidChangeVisibility(event => { if (event.visible) refreshModels(); }),
+    targets, {dispose: () => {
+      for (const timer of targetTimers.values()) timer.cancel();
+      for (const run of targetRuns.values()) run.cancel();
+    }},
     vscode.workspace.onDidCloseTextDocument(document => {
       if (document.uri.scheme === 'pietto-sql-preview' || document.uri.scheme === 'pietto-migration-preview') previews.delete(document.uri.toString());
       markUnsaved();
+      // pietto lsp checks a file outside every root only while it is open.
+      for (const scope of scopesOf(document)) if (scope.kind === 'file') stopTargets(keyOf(scope));
     }),
-    vscode.workspace.onDidChangeTextDocument(event => { staleProject(event.document); markUnsaved(); }),
-    vscode.workspace.onDidSaveTextDocument(document => { staleProject(document); savedModel(document); markUnsaved(); }),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      staleProject(event.document);
+      markUnsaved();
+      if (event.contentChanges.length) for (const scope of scopesOf(event.document)) stopTargets(keyOf(scope));
+    }),
+    vscode.workspace.onDidSaveTextDocument(document => {
+      staleProject(document);
+      savedModel(document);
+      markUnsaved();
+      scheduleTargets(document);
+    }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('pietto')) { previewEpoch++; scheduled.schedule(); refreshModels(); }
+      if (event.affectsConfiguration('pietto')) { previewEpoch++; scheduled.schedule(); refreshModels(); clearTargets(); }
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => { void restart(); refreshModels(); }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { clearTargets(); void restart(); refreshModels(); }),
     vscode.workspace.onDidGrantWorkspaceTrust(() => { void restart(); refreshModels(); }),
     vscode.languages.registerCodeActionsProvider({scheme: 'file', language: 'pietto'}, {
       provideCodeActions: (document, _range, actionContext) => quickFixes(actionContext.diagnostics, vscode.DiagnosticSeverity.Warning).map(([fix, diagnostics]) => {

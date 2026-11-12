@@ -19,7 +19,9 @@ async function main() {
     'pietto.pythonPath': python(),
     ...quietEditor,
   }, null, 2));
-  writeFileSync(path.join(workspace, '.vscode', 'settings.json'), JSON.stringify({'pietto.pythonPath': path.join(workspace, 'workspace-selected-python'), 'pietto.projectRoots': ['.']}, null, 2));
+  // Target diagnostics are on, so a broken trust gate would report the missing contract.
+  writeFileSync(path.join(workspace, '.vscode', 'settings.json'), JSON.stringify({'pietto.pythonPath': path.join(workspace, 'workspace-selected-python'), 'pietto.projectRoots': ['.'],
+    'pietto.targetDiagnostics': true, 'pietto.emissionContract': 'missing.json'}, null, 2));
   writeFileSync(path.join(workspace, 'pietto.toml'), 'schema_version = 2\n\n[sources]\ninclude = ["*.pietto"]\n');
   writeFileSync(path.join(workspace, 'restricted.pietto'), 'shape User:\n    id: Int\n\nquery q:\n    from nowhere\n    select:\n        id\n\n');
   // test-electron's runTests always disables Workspace Trust. This direct launch keeps

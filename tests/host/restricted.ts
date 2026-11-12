@@ -45,10 +45,17 @@ export async function run(): Promise<void> {
   const folds = await vscode.commands.executeCommand<vscode.FoldingRange[]>('vscode.executeFoldingRangeProvider', file);
   // VS Code's indentation folding with folding.offSide: a block's trailing blank lines stay outside its fold.
   assert.deepEqual(folds.map(fold => [fold.start, fold.end]), [[0, 1], [3, 6], [5, 6]], 'Indented blocks fold.');
-  console.log('PASS Restricted Mode: Pietto language mode, snippets and folding available; no pietto lsp or explain process, no diagnostics, workspace interpreter ignored.');
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(file, new vscode.Position(document.lineCount - 1, 0), '\n');
+  assert.equal(await vscode.workspace.applyEdit(edit), true);
+  assert.equal(await document.save(), true);
+  await sleep(3000);
+  const targets = vscode.languages.getDiagnostics().flatMap(([, found]) => found).filter(item => item.source?.startsWith('pietto emit-sql'));
+  assert.deepEqual(targets, [], 'A save in Restricted Mode runs no emit-sql for target diagnostics.');
+  console.log('PASS Restricted Mode: Pietto language mode, snippets and folding available; no pietto lsp or explain process, no diagnostics, no target diagnostics after a save, workspace interpreter ignored.');
   mkdirSync(path.join(root, 'artifacts'), {recursive: true});
   writeFileSync(path.join(root, 'artifacts', 'restricted-host-results.json'), JSON.stringify({
     vscode: vscode.version, extensionPath: extension.extensionPath, trusted: vscode.workspace.isTrusted, client: api.client ?? null,
-    serverProcesses: servers() ?? null, diagnostics: pietto(file).length, snippets, folds: folds.map(fold => [fold.start, fold.end]), completed: true,
+    serverProcesses: servers() ?? null, diagnostics: pietto(file).length, targetDiagnostics: targets.length, snippets, folds: folds.map(fold => [fold.start, fold.end]), completed: true,
   }, null, 2));
 }

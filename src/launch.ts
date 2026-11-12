@@ -20,6 +20,10 @@ export const previewArguments = (launcher: string[], source: string[], dialect: 
 export interface ProjectRequest {readonly root: string; readonly module: string; readonly dialect: Dialect; readonly contract: string}
 export const projectPreviewArguments = (launcher: string[], {root, module, dialect, contract}: ProjectRequest) => commandArguments(launcher,
   ['emit-sql', `--project=${root}`, '--all', `--module=${module}`, `--dialect=${dialect}`, `--emission-contract=${contract}`, '--format=json']);
+// The same batch over every public table and query of the root, for target diagnostics.
+export type ProjectTarget = Omit<ProjectRequest, 'module'>;
+export const projectTargetArguments = (launcher: string[], {root, dialect, contract}: ProjectTarget) => commandArguments(launcher,
+  ['emit-sql', `--project=${root}`, '--all', `--dialect=${dialect}`, `--emission-contract=${contract}`, '--format=json']);
 export const migrateArguments = (launcher: string[], source: string) => commandArguments(launcher, ['migrate', source]);
 // The relation columns of a schema_version 2 project (pietto.project-relation-columns.v1).
 export const explainArguments = (launcher: string[], root: string) => commandArguments(launcher, ['explain', `--project=${root}`, '--format=json']);

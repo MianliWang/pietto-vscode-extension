@@ -12,6 +12,7 @@ The extension is declarative language support plus one language client.
 | Single-file SQL preview | `pietto emit-sql FILE --dialect {postgres,mysql} --format json` | yes |
 | Project SQL preview | `pietto emit-sql --project ROOT --all --module MODULE --dialect {postgres,mysql} --emission-contract FILE --format json` | yes |
 | Pietto Models view | `src/models.ts` on `pietto explain --project ROOT --format json` (`pietto.project-relation-columns.v1`, alpha) | yes |
+| Target diagnostics (opt-in) | `src/target.ts`: after a save, `pietto emit-sql --project ROOT --all --dialect {postgres,mysql} --emission-contract FILE --format json`, or `pietto emit-sql FILE --dialect {postgres,mysql} --format json` outside every root | yes |
 | Quick fixes | `src/actions.ts` on the public diagnostic codes `PIE-S2708` and `PIE-P1000`; the migration preview runs `pietto migrate FILE` | yes |
 
 ## Grammar and snippets
@@ -63,7 +64,8 @@ install script.
   dropped (the server refuses them), and the first spelling is kept.
 - Restarts: a change of any `pietto.*` setting (`pietto.pythonPath`,
   `pietto.pythonArguments`, `pietto.projectRoots`, and also the preview
-  settings `pietto.sqlDialect` and `pietto.emissionContract`), a
+  settings `pietto.sqlDialect` and `pietto.emissionContract` and
+  `pietto.targetDiagnostics`), a
   `pietto.toml` created, changed or deleted under a selected root, a change
   of workspace folders, granting trust, and **Pietto: Restart Language
   Server** stop the client and
@@ -227,6 +229,69 @@ nothing. A cancelled or timed-out run of a preview or of the view counts as
 ended only once its process has exited. A hidden view keeps its last result
 and lists every root again when it becomes visible.
 
+## Target diagnostics
+
+An interim extension feature: `pietto lsp` publishes `pietto check`
+diagnostics only, and Pietto's decisions D75.09 and ED.06 keep backend
+refusals out of the server and leave target readiness in the editor to the
+extension for now. With the resource setting
+`pietto.targetDiagnostics` (default `false`), a save runs `emit-sql` and puts
+what it refuses into a second collection, `pietto-target`, as Warnings with
+the source `pietto emit-sql (DIALECT)`, so the quick fixes, which read only
+source `pietto`, never act on them. The server and its contract are
+unchanged.
+
+- Scopes: a save of a file of the `file` scheme schedules each scope it
+  belongs to: every root of `pietto.projectRoots` that holds it as a `pietto`
+  document, its `pietto.toml` or its `pietto.emissionContract`, else, for a
+  `pietto` document outside every root, the file itself. A root runs
+  `emit-sql --project=ROOT --all --dialect=DIALECT --emission-contract=CONTRACT
+  --format=json`, the preview's batch form without `--module`, with 64 MiB and
+  60 s; a file runs the single-file preview's command with 4 MiB and 30 s.
+  Both go through `run()` of `src/preview.ts`: `-I`, an argv array, no shell,
+  the `/mnt` mapping of a `wsl.exe` launcher, and any stderr counts as a
+  failure. Nothing runs without Workspace Trust, with the setting off, with a
+  dialect other than `postgres` or `mysql`, for a root without a contract, or
+  while any file of the scope is unsaved.
+- Freshness: each scope is debounced by 500 ms after its last save and runs
+  one process at a time; a new run cancels the old one. An edit of a file of
+  the scope cancels its timer and run and clears its entries; closing a file
+  outside every root clears its own. A change of any `pietto.*` setting or of
+  the workspace folders clears every scope. A result is shown only if its run
+  is still the scope's current one after the files it names are read, so a
+  stale result is dropped. Each file shows the entries of every scope that
+  names it, in scope order.
+- Reading: the single-file response must be a CLI JSON v1 `emit-sql`
+  envelope of that dialect for that input path, whose `ok` and exit code are
+  the ones its `cli_errors` and error diagnostics give. The batch is read by
+  the preview's `parseBatch` (exit code, status and items agree), with every
+  module a normalized relative path and every `VERIFIED` item of the dialect.
+  Each document that is not `VERIFIED` gives, in document order, its CLI
+  errors except the project loading kinds that `pietto lsp` reports itself
+  (`project_root`, `config_read`, `config_parse`, `config_schema`,
+  `project_path`, `project_glob`, `project_resource`, `source_read`), then its
+  `PIE-B` blockers and its `PIE-B` diagnostics. A document with an error
+  diagnostic that is not `PIE-B` gives nothing (the check errors are the
+  server's; `PIE-I` is not shown in this version); warnings do not count. An
+  item's entries start with `KIND NAME: `. A blocker reads
+  `REASON: DETAIL` with its suggestion on a second line; a diagnostic reads as
+  `pietto lsp` shows one; a CLI error reads `KIND: MESSAGE` with
+  ` (path: PATH)` when it has one, escaped as the preview report escapes
+  text. Every entry is kept: no deduplication and no winner.
+- Places: a located entry and its located related items keep their
+  positions, converted as `pietto lsp` converts those of a closed disk file:
+  one-based code-point columns to UTF-16, a leading BOM not counted, LF, CRLF
+  and CR as line breaks, a missing end as the start, and clamped at the last
+  position. An entry without a location goes to the start of its item's
+  module; of a whole-batch document, a contract CLI error with a path goes to
+  the contract file and everything else to `pietto.toml`; in single-file mode,
+  to the file.
+- Failures: a response that is not valid JSON, has an unknown `format`,
+  `schema_version` or field shape, or disagrees with its exit code, a timeout
+  or an interpreter that cannot be started gives one Warning with the reason
+  at the start of `pietto.toml` (the file in single-file mode) and no partial
+  result.
+
 ## Quick fixes
 
 One code action provider for `pietto` documents of the `file` scheme (an
@@ -274,7 +339,7 @@ extension runs inside WSL (`extensionKind: workspace`) and needs no mapping.
 ## Trust
 
 `capabilities.untrustedWorkspaces` is `limited`. In Restricted Mode the
-extension starts no process and ignores `pietto.pythonPath` and
+extension starts no process, for target diagnostics neither, and ignores `pietto.pythonPath` and
 `pietto.pythonArguments` from the workspace (`restrictedConfigurations`).
 Highlighting, snippets and folding work. The Pietto Models view shows one line
 that asks for trust and runs nothing.

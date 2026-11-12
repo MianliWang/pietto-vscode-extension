@@ -112,8 +112,9 @@ describes:
   `Not checked: this module imports <file>, which has errors.`
 - Project errors read `project error: <kind>: <message>`, at the file they
   name, else at `pietto.toml`, else in a message window.
-- Backend refusals (`PIE-B…`) appear only in `pietto emit-sql`; the editor runs
-  no SQL dialect.
+- The language server reports no backend refusals (`PIE-B…`): it runs no SQL
+  dialect. The opt-in [target diagnostics](#target-diagnostics) show them
+  after a save.
 
 The server adds these editor-only messages, without a `PIE-` code, at the start
 of the file:
@@ -231,6 +232,49 @@ unknown format, type kind or nullability, an exit code that disagrees with
 `ok`, or any error output, replaces the whole root with one line that says so;
 the view never shows part of such a result.
 
+## Target diagnostics
+
+`pietto check`, and so the language server, tells whether a file is valid
+Pietto. Whether the selected database can get SQL for it is known only to
+`pietto emit-sql`. Set `pietto.targetDiagnostics` to `true` (it is `false` by
+default) to have the extension run `emit-sql` after each save and show what it
+refuses as Warnings, with the source `pietto emit-sql (postgres)` or
+`pietto emit-sql (mysql)`. This is an interim feature of the extension; the
+language server itself stays without backend refusals.
+
+- Saving a `.pietto` file, `pietto.toml` or the emission contract of a project
+  root runs the batch over every public table and query of the root, with the
+  `pietto.sqlDialect` and `pietto.emissionContract` settings:
+
+  ```text
+  pietto emit-sql --project=ROOT --all --dialect=DIALECT --emission-contract=CONTRACT --format=json
+  ```
+
+  A root without `pietto.emissionContract` is skipped, without a message.
+- Saving a Pietto file outside every root runs
+  `pietto emit-sql FILE --dialect DIALECT --format json`.
+- `emit-sql` reads the saved files, so it runs half a second after the last
+  save and only while no file of the root is unsaved. An edit of a file of
+  the root clears its entries until the next save, and a result that a later
+  save or an edit makes stale is dropped. Changing a `pietto.*` setting clears
+  every entry; turning the setting on shows nothing until the next save.
+- Each `PIE-B…` refusal is shown at its location, or at the start of its
+  module when it has none, such as `PIE-B1004 MISSING_EVIDENCE` for a premise
+  that the contract lacks. A project entry starts with its table or query, for
+  example `query large_items: MISSING_EVIDENCE: identifier_case_declaration_missing`,
+  and the suggestion follows on a second line.
+- `emit-sql`'s own errors are shown too, such as a contract that cannot be
+  read or whose target family is not the dialect: an error of the whole batch
+  at the contract file, else at `pietto.toml`; an error of one table or query
+  at the start of its module.
+- A table, query or file with an error that is not `PIE-B…` (such as a check
+  error, which the language server shows) gets no entry; a warning does not hide its
+  refusals. Project loading and configuration errors are left to the language
+  server as well.
+- Output this extension cannot read, or a run that fails or times out, gives
+  one Warning with the reason at the start of `pietto.toml` (or of the file
+  outside a root) and no partial result.
+
 ## Quick fixes
 
 The lightbulb offers two quick fixes. They are chosen by a diagnostic's public
@@ -259,7 +303,7 @@ editor-only messages above, which have no code, get none.
 ## Restricted Mode
 
 In an untrusted workspace you get highlighting, snippets and folding. No
-process is started, and `pietto.pythonPath` and `pietto.pythonArguments` from
+process is started, target diagnostics included, and `pietto.pythonPath` and `pietto.pythonArguments` from
 the workspace settings are ignored. The **Pietto Models** view only asks you
 to trust the workspace. Trusting the workspace starts the server.
 

@@ -4,7 +4,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {test} from 'node:test';
-import {commandArguments, debounce, fromWsl, isWslLauncher, migrateArguments, previewArguments, probe, probeArguments, projectPreviewArguments, projectsOf, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
+import {commandArguments, debounce, fromWsl, isWslLauncher, migrateArguments, previewArguments, probe, probeArguments, projectPreviewArguments, projectsOf, projectTargetArguments, resolveRoots, serverArguments, strings, toWsl} from '../src/launch';
 import {parseMigration, previewMigration, previewProjectSql, previewSql} from '../src/preview';
 import {python, pythonArguments} from './editor';
 
@@ -114,6 +114,9 @@ test('project SQL preview runs the documented batch form for one module, each va
   assert.deepEqual(args.slice(args.indexOf('emit-sql')), ['emit-sql', "--project=/work/it's a project", '--all', '--module=-odd/main.pietto', '--dialect=mysql',
     '--emission-contract=contracts/my sql.json', '--format=json']);
   assert.doesNotMatch(args[args.indexOf('-c') + 1], /it's a project/);
+  const all = projectTargetArguments(['-B'], {root: '-root', dialect: 'postgres', contract: 'contract.json'});
+  assert.deepEqual(all.slice(all.indexOf('emit-sql')), ['emit-sql', '--project=-root', '--all', '--dialect=postgres', '--emission-contract=contract.json', '--format=json']);
+  assert.deepEqual(all.slice(0, 2), ['-B', '-I']);
 });
 
 test('a file belongs to each root that contains it, with its project-relative module path', () => {

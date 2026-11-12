@@ -456,6 +456,59 @@ export async function run(): Promise<void> {
     });
   }
 
+  // The target diagnostics of a file, as [message, code, severity, source, range].
+  const targets = (uri: vscode.Uri) => vscode.languages.getDiagnostics(uri).filter(item => item.source?.startsWith('pietto emit-sql'))
+    .map(item => [item.message, String(item.code), item.severity, item.source, span(item.range)]);
+  // An edit at `at`, then a save, which is what starts emit-sql.
+  const saveWith = async (uri: vscode.Uri, at: (document: vscode.TextDocument) => vscode.Position, text: string) => {
+    const document = await vscode.workspace.openTextDocument(uri);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(uri, at(document), text);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    assert.equal(await document.save(), true);
+    return document;
+  };
+  const evidence = (name: string) => [`query ${name}: MISSING_EVIDENCE: identifier_case_declaration_missing\nadd {"key":"identifier_case","scope":"statement","value":"quoted_exact"} to "environment"`,
+    'PIE-B1004', vscode.DiagnosticSeverity.Warning, 'pietto emit-sql (postgres)', [0, 0, 0, 0]];
+
+  await step('target diagnostics are off by default; turned on, a save shows the root\'s emit-sql refusals as Warnings, and an edit clears them', async () => {
+    assert.equal(settings().get('targetDiagnostics'), false);
+    const document = await saveWith(blocked, () => new vscode.Position(0, 0), '# saved\n');
+    await sleep(2000);
+    assert.deepEqual([...targets(items), ...targets(blocked)], [], 'Off by default, a save shows nothing.');
+    await settings().update('targetDiagnostics', true, vscode.ConfigurationTarget.WorkspaceFolder);
+    await saveWith(blocked, () => new vscode.Position(0, 0), '# saved\n');
+    // Both queries miss evidence, which has no location: each is at the start of its module.
+    const shown = () => targets(items).length === 1 && targets(blocked).length === 1 && [...targets(items), ...targets(blocked)];
+    assert.deepEqual(await waitFor('the target diagnostics of both modules', shown, 60_000), [evidence('small_items'), evidence('large_items')]);
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(items, new vscode.Position(0, 0), '# unsaved\n');
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await waitFor('no target diagnostics in the root after an edit', () => !targets(items).length && !targets(blocked).length);
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(items));
+    await vscode.commands.executeCommand('workbench.action.files.revert');
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(blocked, new vscode.Range(0, 0, 2, 0));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    assert.equal(await document.save(), true);
+    assert.deepEqual(await waitFor('the target diagnostics again after a save', shown, 60_000), [evidence('small_items'), evidence('large_items')]);
+    return {items: targets(items), blocked: targets(blocked)};
+  });
+
+  await step('a target diagnostic of a file outside every root has its location; turned off, none remain', async () => {
+    const document = await saveWith(mysqlPreview, document => document.positionAt(document.getText().length), '\n');
+    const found = await waitFor('the PIE-B1000 refusal of a MySQL source', () => targets(mysqlPreview).length && targets(mysqlPreview), 60_000);
+    assert.deepEqual(found, [['PostgreSQL SQL emission is not implemented for RelationIR: item_ids. PostgreSQL relation emission requires postgres.table(Text)',
+      'PIE-B1000', vscode.DiagnosticSeverity.Warning, 'pietto emit-sql (postgres)', [5, 0, 8, 10]]]);
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(mysqlPreview, new vscode.Range(document.lineCount - 2, 0, document.lineCount - 1, 0));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    assert.equal(await document.save(), true);
+    await settings().update('targetDiagnostics', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+    await waitFor('no target diagnostics once turned off', () => !targets(mysqlPreview).length && !targets(items).length && !targets(blocked).length);
+    return {found};
+  });
+
   // A stand-in interpreter that runs the real one, but first marks each emit-sql run in
   // gated-python.started and holds it until gated-python.go exists.
   const gate = process.platform === 'win32' ? undefined : path.join(root, '.local', 'gated-python');
