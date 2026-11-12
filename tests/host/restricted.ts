@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
-import {Api, explains, pietto, servers, sleep} from './common';
+import {Api, explains, pietto, quietMs, servers, sleep} from './common';
 
 export async function run(): Promise<void> {
   const root = process.env.PIETTO_HOST_ROOT!;
@@ -49,7 +49,7 @@ export async function run(): Promise<void> {
   edit.insert(file, new vscode.Position(document.lineCount - 1, 0), '\n');
   assert.equal(await vscode.workspace.applyEdit(edit), true);
   assert.equal(await document.save(), true);
-  await sleep(3000);
+  await sleep(quietMs);
   const targets = vscode.languages.getDiagnostics().flatMap(([, found]) => found).filter(item => item.source?.startsWith('pietto emit-sql'));
   assert.deepEqual(targets, [], 'A save in Restricted Mode runs no emit-sql for target diagnostics.');
   console.log('PASS Restricted Mode: Pietto language mode, snippets and folding available; no pietto lsp or explain process, no diagnostics, no target diagnostics after a save, workspace interpreter ignored.');

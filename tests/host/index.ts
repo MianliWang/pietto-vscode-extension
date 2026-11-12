@@ -3,7 +3,7 @@ import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:f
 import path from 'node:path';
 import * as vscode from 'vscode';
 import {Node} from '../../src/models';
-import {Api, codes, explains, pietto, servers, sleep, span, waitFor} from './common';
+import {Api, codes, explains, pietto, quietMs, servers, sleep, span, waitFor} from './common';
 
 export async function run(): Promise<void> {
   const root = process.env.PIETTO_HOST_ROOT!;
@@ -471,10 +471,10 @@ export async function run(): Promise<void> {
   const evidence = (name: string) => [`query ${name}: MISSING_EVIDENCE: identifier_case_declaration_missing\nadd {"key":"identifier_case","scope":"statement","value":"quoted_exact"} to "environment"`,
     'PIE-B1004', vscode.DiagnosticSeverity.Warning, 'pietto emit-sql (postgres)', [0, 0, 0, 0]];
 
-  await step('target diagnostics are off by default; turned on, a save shows the root\'s emit-sql refusals as Warnings, and an edit clears them', async () => {
+  await step('target diagnostics are off by default; turned on, a save shows the root\'s emit-sql refusals as Warnings, an edit clears them, and a save shows none while another file of the root is unsaved', async () => {
     assert.equal(settings().get('targetDiagnostics'), false);
     const document = await saveWith(blocked, () => new vscode.Position(0, 0), '# saved\n');
-    await sleep(2000);
+    await sleep(quietMs);
     assert.deepEqual([...targets(items), ...targets(blocked)], [], 'Off by default, a save shows nothing.');
     await settings().update('targetDiagnostics', true, vscode.ConfigurationTarget.WorkspaceFolder);
     await saveWith(blocked, () => new vscode.Position(0, 0), '# saved\n');
@@ -485,21 +485,33 @@ export async function run(): Promise<void> {
     edit.insert(items, new vscode.Position(0, 0), '# unsaved\n');
     assert.equal(await vscode.workspace.applyEdit(edit), true);
     await waitFor('no target diagnostics in the root after an edit', () => !targets(items).length && !targets(blocked).length);
+    // Each call saves blocked.pietto without one of its two saved lines.
+    const saveOneLess = async () => {
+      const undo = new vscode.WorkspaceEdit();
+      undo.delete(blocked, new vscode.Range(0, 0, 1, 0));
+      assert.equal(await vscode.workspace.applyEdit(undo), true);
+      assert.equal(await document.save(), true);
+    };
+    await saveOneLess();
+    await sleep(quietMs);
+    assert.deepEqual([...targets(items), ...targets(blocked)], [], 'While items.pietto is unsaved, a save in its root shows nothing.');
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(items));
     await vscode.commands.executeCommand('workbench.action.files.revert');
-    const undo = new vscode.WorkspaceEdit();
-    undo.delete(blocked, new vscode.Range(0, 0, 2, 0));
-    assert.equal(await vscode.workspace.applyEdit(undo), true);
-    assert.equal(await document.save(), true);
+    await saveOneLess();
     assert.deepEqual(await waitFor('the target diagnostics again after a save', shown, 60_000), [evidence('small_items'), evidence('large_items')]);
     return {items: targets(items), blocked: targets(blocked)};
   });
 
-  await step('a target diagnostic of a file outside every root has its location; turned off, none remain', async () => {
+  await step('a target diagnostic of a file outside every root has its location and goes when the file closes; turned off, none remain', async () => {
     const document = await saveWith(mysqlPreview, document => document.positionAt(document.getText().length), '\n');
     const found = await waitFor('the PIE-B1000 refusal of a MySQL source', () => targets(mysqlPreview).length && targets(mysqlPreview), 60_000);
     assert.deepEqual(found, [['PostgreSQL SQL emission is not implemented for RelationIR: item_ids. PostgreSQL relation emission requires postgres.table(Text)',
       'PIE-B1000', vscode.DiagnosticSeverity.Warning, 'pietto emit-sql (postgres)', [5, 0, 8, 10]]]);
+    // VS Code keeps a document an extension opened for minutes after its editor closes; a
+    // language change closes it at once.
+    await vscode.languages.setTextDocumentLanguage(document, 'plaintext');
+    await waitFor('no target diagnostics once the file outside every root is closed', () => !targets(mysqlPreview).length);
+    await vscode.languages.setTextDocumentLanguage(document, 'pietto');
     const undo = new vscode.WorkspaceEdit();
     undo.delete(mysqlPreview, new vscode.Range(document.lineCount - 2, 0, document.lineCount - 1, 0));
     assert.equal(await vscode.workspace.applyEdit(undo), true);

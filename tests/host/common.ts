@@ -29,6 +29,9 @@ export function servers(script = serverArguments([]).at(-1)!): {pid: number; arg
 export const explains = () => servers(commandArguments([], []).at(-1)!)?.filter(found => found.argv.includes('explain'));
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// How long a check that a save ran no emit-sql waits: the 0.5 s debounce and one real emit-sql
+// run took under 1.5 s in the host suite, so this leaves room for a loaded machine.
+export const quietMs = 5000;
 
 export async function waitFor<T>(what: string, check: () => T | undefined | null | false | Promise<T | undefined | null | false>, timeout = 30_000): Promise<T> {
   const deadline = Date.now() + timeout;

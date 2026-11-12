@@ -45,10 +45,11 @@
   errors as Warnings in their own collection, with the source
   `pietto emit-sql (DIALECT)`. A refusal without a location is shown at the
   start of its module, named by its table or query. A table, query or file
-  with a check error gets nothing, since the language server reports it; a
-  warning does not hide its refusals. An edit clears the entries of its root
-  until the next save, and a stale result is dropped. Nothing runs in
-  Restricted Mode. The language server is unchanged.
+  with an error that is not `PIE-B…` gets nothing: a check error, which the
+  language server reports, or an IR error (`PIE-I…`), which this version does
+  not show. A warning does not hide its refusals. An edit clears the entries
+  of its root until the next save, and a stale result is dropped. Nothing
+  runs in Restricted Mode. The language server is unchanged.
 - Quick fixes keyed on public diagnostic codes, never on message text:
   `PIE-S2708` (the single-file Warning at an import or export) offers
   **Select project root**, which writes the chosen folder to
