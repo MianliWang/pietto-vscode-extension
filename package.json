@@ -1,7 +1,7 @@
 {
   "name": "pietto-vscode-extension",
   "displayName": "Pietto",
-  "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server.",
+  "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server; with pietto 0.1.11 also hover, definition, symbols, import links, formatting and completion.",
   "version": "0.3.0",
   "publisher": "MianliWang",
   "license": "MIT",
@@ -42,7 +42,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Highlighting, snippets and folding work. Diagnostics start pietto lsp from the selected Python and need Workspace Trust.",
+      "description": "Highlighting, snippets and folding work. Diagnostics and the other language server features (hover, definition, symbols, links, formatting and completion with pietto 0.1.11) start pietto lsp from the selected Python and need Workspace Trust.",
       "restrictedConfigurations": [
         "pietto.pythonPath",
         "pietto.pythonArguments"

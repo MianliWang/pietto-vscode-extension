@@ -8,7 +8,7 @@ The extension is declarative language support plus one language client.
 | Snippets | `snippets/pietto.json` | no |
 | Comments, brackets, indentation, folding | `language-configuration.json` (folding is VS Code's indentation folding with `folding.offSide`) | no |
 | Diagnostics | `pietto lsp`, through `vscode-languageclient` | yes |
-| Hover, definition and document symbols | Standard LSP from `pietto lsp`, through `vscode-languageclient` | yes |
+| Hover, definition, document and workspace symbols, document links, formatting, completion (pietto 0.1.11) | Standard LSP from `pietto lsp`, through `vscode-languageclient`, for each capability the server announces | yes |
 | Single-file SQL preview | `pietto emit-sql FILE --dialect {postgres,mysql} --format json` | yes |
 | Project SQL preview | `pietto emit-sql --project ROOT --all --module MODULE --dialect {postgres,mysql} --emission-contract FILE --format json` | yes |
 | Pietto Models view | `src/models.ts` on `pietto explain --project ROOT --format json` (`pietto.project-relation-columns.v1`, alpha) | yes |
@@ -104,22 +104,39 @@ changed outside the editor are not watched, so the README asks for **Pietto:
 Restart Language Server** after such a change; a core watched-files contract
 is a later decision.
 
-## Editor navigation
+## Language server features
 
-The client uses the standard LSP hover, definition and document-symbol
-capabilities that a compatible Pietto server advertises; it has no private
-provider, core import or editor-facts transport. Pietto answers each request
-from an ephemeral snapshot made by the same analysis that produced the current
-diagnostics. A document edit, close, root or URI conflict, or failed analysis
-invalidates that snapshot. In those cases, and for unknown or ambiguous
-bindings, the server returns no hover or definition and no symbols.
+`vscode-languageclient` 9.0.1 registers a standard LSP feature for each
+capability that the `initialize` result of `pietto lsp` announces, for the
+existing `pietto` document selector. pietto 0.1.10 announces only document
+synchronization (and the `utf-16` position encoding), so it gives
+diagnostics alone. pietto 0.1.11 also announces
+`completionProvider`, `hoverProvider`, `definitionProvider`,
+`documentSymbolProvider`, `documentFormattingProvider`,
+`workspaceSymbolProvider` and `documentLinkProvider`. The extension adds no
+version check, middleware, private provider, core import or
+`configurationDefaults`: the announced capabilities, not `serverInfo.version`,
+decide which features exist, and a feature that the server does not announce
+is simply absent. The minimum stays pietto 0.1.10.
 
-Definition returns a target location only for an exact retained `type` or
-`from` target. Hover exposes retained declaration and type text, including a
-known builtin type; document symbols list named top-level declarations in
-source order. The request itself does not parse, check, compile or read the
-document. Fields, lets, parameters, function calls, completion and formatting
-remain outside this contract.
+Pietto answers hover, definition, document and workspace symbols and links
+from the analysis that produced the current diagnostics, without a new check
+or a file read; a stale or failed analysis, a module with errors of its own,
+a `schema_version = 1` root or a root, URI or file-name conflict has none.
+Formatting answers with the `pietto fmt` layout of the open buffer, and
+nothing when `fmt` refuses it. Completion returns one fixed list of keywords
+and builtins plus the identifiers of the open buffer. In VS Code 1.145.2 that
+list replaces the editor's word-based suggestions in Pietto files, while the
+snippets of `snippets/pietto.json` stay (the host suite checks both). The
+exact rules are
+Pietto's
+[editor-lsp.md](https://github.com/MianliWang/pietto/blob/v0.1.11/docs/editor-lsp.md)
+of 0.1.11.
+
+`editor.formatOnSave` keeps VS Code's default, off: turning it on for every
+user would rewrite their files on save, and the `fmt` layout may still change
+before Pietto freezes its formats. The README shows the `[pietto]` setting
+that turns it on.
 
 ## SQL preview
 
@@ -346,12 +363,13 @@ that asks for trust and runs nothing.
 
 ## What the extension does not do
 
-No completion, formatter, connection view or configuration, telemetry,
-source upload, automatic installation, or quick fix that edits a Pietto file
+No completion or formatter of its own (both come from `pietto lsp` 0.1.11),
+no connection view or configuration, telemetry, source upload, automatic
+installation, or quick fix that edits a Pietto file
 or applies a text edit; the one quick fix that writes anything, **Select
 project root**, writes only the `pietto.projectRoots` setting of the folder
 you pick. The adapter of 0.1.0 and 0.1.1 that provided broader hover,
 completion, definition, outline and the model and connection views imported
 private Pietto modules, so it remains removed. The current standard-LSP
-navigation and the Pietto Models view use only public core contracts; they do
+features and the Pietto Models view use only public core contracts; they do
 not restore the connection view or broader binding categories.

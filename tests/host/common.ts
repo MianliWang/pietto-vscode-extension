@@ -4,7 +4,7 @@ import {commandArguments, serverArguments} from '../../src/launch';
 import {ModelItem} from '../../src/models';
 
 export interface Api {
-  readonly client?: {initializeResult?: {serverInfo?: {name: string; version?: string}}};
+  readonly client?: {initializeResult?: {capabilities?: Record<string, unknown>; serverInfo?: {name: string; version?: string}}};
   readonly notices: string[];
   readonly models: vscode.TreeDataProvider<ModelItem>;
 }

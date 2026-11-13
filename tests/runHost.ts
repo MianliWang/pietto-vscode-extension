@@ -36,6 +36,7 @@ export const fixture: Record<string, string> = {
   'loose/preview.pietto': 'shape Item:\n    id: Int\n\nsource items: Item = postgres.table("public.items")\n\nquery item_ids:\n    from items\n    select:\n        id\n',
   'loose/legacy.pietto': 'shape User:\n    id: Int not null\n    email: Text nullable\n\nsource users: User = postgres.table("public.users")\n',
   'loose/manual.pietto': 'mode strict\nshape Legacy:\n    id: Int\n',
+  'loose/format.pietto': 'shape Item:\n  id: Int\n\n\n\nsource items: Item = postgres.table("public.items")\n',
   'loose/preview-mysql.pietto': 'shape Item:\n    id: Int\n\nsource items: Item = mysql.table("fixture.items")\n\nquery item_ids:\n    from items\n    select:\n        id\n',
   'emit/pietto.toml': 'schema_version = 2\n\n[sources]\ninclude = ["models/*.pietto"]\n',
   'emit/contract.json': `${JSON.stringify(contract, null, 2)}\n`,

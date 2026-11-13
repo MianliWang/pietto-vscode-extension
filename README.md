@@ -3,15 +3,20 @@
 # Pietto for VS Code
 
 Highlighting, snippets and folding for `.pietto` files, and Problems
-diagnostics from the Pietto language server, `pietto lsp`. The extension starts
-`pietto lsp` from a Python environment that you choose. It never installs
-anything, runs queries, or connects to a database.
+diagnostics from the Pietto language server, `pietto lsp`. With pietto 0.1.11
+the server also gives hover, go to definition, symbols, import links,
+formatting and completion. The extension starts `pietto lsp` from a Python
+environment that you choose. It never installs anything, runs queries, or
+connects to a database.
 
 ## Install Pietto
 
 The extension needs `pietto lsp`, which first ships in **pietto 0.1.10**.
-Install pietto 0.1.10 or later from PyPI, in its own virtual environment of
-Python 3.12 or later:
+That is the minimum, and it gives diagnostics. The
+[editor features](#editor-features-pietto-0111) (hover, go to definition,
+symbols, import links, formatting and completion) need **pietto 0.1.11**.
+Install pietto from PyPI, in its own virtual environment of Python 3.12 or
+later; the commands below install the newest release:
 
 ```bash
 python3 -m venv ~/.venvs/pietto
@@ -95,7 +100,7 @@ relative to the project root, such as `"models/users.pietto"`.
 ## Diagnostics
 
 The Problems panel shows what `pietto check` reports, as the server contract
-([Pietto docs/editor-lsp.md](https://github.com/MianliWang/pietto/blob/main/docs/editor-lsp.md))
+([Pietto docs/editor-lsp.md](https://github.com/MianliWang/pietto/blob/v0.1.11/docs/editor-lsp.md))
 describes:
 
 - Every module that a project root selects is checked, open or not, and gets
@@ -126,19 +131,74 @@ of the file:
 | Two selected files differ only in letter case | `This file is selected under two names that differ only in letter case: <name 1> and <name 2>. Rename one of them.` |
 | The editor sent a partial change | `Pietto needs whole-document changes; reopen this file.` |
 
-Alongside diagnostics and [SQL preview](#preview-sql), a Pietto server that exposes
-the editor-facts v1 contract provides standard hover, go to definition and the
-document outline. They are deliberately narrow: definition is available only
-for exact retained `type` and `from` targets. Hover shows retained declaration
-and type text, including a known builtin type where available, and the outline
-lists named top-level declarations in source order. Fields, lets, parameters,
-function calls, completion and formatting are not covered. A change, close,
-root conflict or failed analysis discards those facts, so VS Code shows no
-navigation result until a current diagnostic analysis provides one. Requests do
-not reparse or compile the document.
-
 Run one Pietto diagnostics source per file; if another tool already runs
 `pietto check` on save, turn it off.
+
+## Editor features (pietto 0.1.11)
+
+Each feature below needs **pietto 0.1.11** or later. The extension turns on
+whatever the server announces when it starts, without looking at its version.
+pietto 0.1.10 announces diagnostics only, so with it these features are absent
+and nothing reports an error. The server's
+[editor-lsp.md](https://github.com/MianliWang/pietto/blob/v0.1.11/docs/editor-lsp.md)
+describes each of them exactly; the surface is alpha and may change in a later
+pietto release.
+
+- **Hover and go to definition** cover a shape field's type, a `type`
+  alias's base type and a `from` reference, following imports and re-exports
+  in a `schema_version = 2` project root. What else they cover depends on
+  the mode. In single file mode: the field reads of a relation with a JOIN,
+  and relationship calls. In a module of a project root: the field and `let`
+  reads of the `let` values, `select` items and `where` of a relation
+  without a JOIN, and a `from` that reads a relation `let`. A builtin type,
+  and a field of a relation `let`, has a hover but no definition. Other uses
+  have neither, such as the reads of a relation without a JOIN and `let`
+  uses in single file mode, a JOIN relation's reads, relationship calls and
+  a `from` that reads a table function in a project, and in both a
+  `source`'s or a parameter's type, `def` calls and parameters.
+- **Outline** (document symbols) lists the named top-level declarations of
+  the file in source order.
+- **Go to Symbol in Workspace** searches those declarations in every module
+  of the roots in `pietto.projectRoots`, open or not, and in the other open
+  Pietto files. In single file mode (no roots) it searches only the open
+  files.
+- **Import links**: in a module of a `schema_version = 2` project root, the
+  path of each import is a link to the module it names. A file checked on its
+  own has none.
+- **Format Document** formats the editor's text as `pietto fmt` formats a
+  file. It writes nothing until you save and ignores the tab and indentation
+  options, because `pietto fmt` has one layout. A file that `pietto fmt`
+  refuses, such as one with a syntax error, gets no change.
+- **Completion** offers one list everywhere in a file: Pietto keywords, the
+  builtin types, functions and aggregates, and the names that the open file
+  writes outside comments and strings, except the word you are typing. It
+  reads no other file. In Pietto files the list replaces VS Code's word-based
+  suggestions, so words that only other open files write are not offered. The
+  extension's snippets stay, so a word such as `shape` appears as a keyword
+  and as a snippet.
+
+These features read the analysis behind the diagnostics: a module with errors
+of its own, a module of a `schema_version = 1` root, or a file that shows one
+of the editor-only messages above gets no hover, definition, symbols or links
+until that is fixed. Formatting and completion read only the editor's text.
+
+### Format on save
+
+The extension does not format on save by default, so no file is rewritten
+without your choice. To format each Pietto file when you save it, add this to
+your user or workspace `settings.json`:
+
+```json
+{
+  "[pietto]": {
+    "editor.formatOnSave": true
+  }
+}
+```
+
+A file that `pietto fmt` refuses is then saved as you typed it. The layout of
+`pietto fmt` may still change in a later pietto release, which can reformat
+files that were formatted before.
 
 ## Preview SQL
 
@@ -351,9 +411,10 @@ pietto 0.1.2, by a fingerprint of its source; 0.1.1 was tested with pietto
 0.1.2 and 0.1.3 and tried any other pietto without a guarantee, so a change to
 those private modules could break them. Diagnostics now come from
 `pietto lsp`, a public Pietto contract. The removed features come back when
-Pietto has public contracts for them. The current standard-LSP hover,
-definition and document outline are separate, exact-fact features; they do not
-restore the removed adapter or its broader navigation. The
+Pietto has public contracts for them. Hover, definition, the outline and
+completion now come from `pietto lsp` 0.1.11 (see
+[Editor features](#editor-features-pietto-0111)); they do not restore the
+removed adapter or its broader navigation. The
 [Pietto Models](#pietto-models) view is rebuilt on Pietto's public relation
 columns, without navigation; the **Pietto Connections** view, the connection
 preview and **Copy Qualified Field Path** stay removed. Project roots now live
@@ -366,7 +427,7 @@ Root** again.
 ```bash
 npm ci --ignore-scripts
 npm run lint
-export PIETTO_TEST_PYTHON=$HOME/.venvs/pietto/bin/python   # pietto 0.1.10 or later
+export PIETTO_TEST_PYTHON=$HOME/.venvs/pietto/bin/python   # pietto 0.1.10 or later; 0.1.11 for every host step
 export PIETTO_TEST_OLD_PYTHON=$HOME/.venvs/pietto-old/bin/python   # optional: a pietto without lsp
 npm test
 npm run test:host
@@ -409,14 +470,17 @@ the extension against the real `pietto lsp`; on Linux they need a display
 (`DISPLAY`, WSLg or `xvfb-run`). Their process checks read `/proc`, so on
 other systems they print a `SKIP` line instead. `npm run package` writes
 `artifacts/pietto-vscode-extension-0.3.0.vsix`, and `npm run test:vsix` installs it into an
-isolated profile and runs the host tests against it. Press F5 for an isolated
+isolated profile and runs the host tests against it. The host steps of the
+pietto 0.1.11 editor features run only when the server announces them: with
+pietto 0.1.10 they print a `SKIP` line instead. Press F5 for an isolated
 development host. See [verification](docs/verification.md) and
 [architecture](docs/architecture.md).
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request to
 `main`: on Ubuntu 26.04 with Node 22 it runs `npm ci --ignore-scripts`, the
 build, the lint and the Node tests of `npm test`, with `PIETTO_TEST_PYTHON`
-set to a Python 3.13 virtual environment that has pietto 0.1.10 from PyPI.
+set to a Python 3.13 virtual environment with pietto from PyPI, once with
+pietto 0.1.10, the minimum, and once with pietto 0.1.11.
 The host suites (`test:host`, `test:restricted`, `test:vsix`) need a display,
 so CI does not run them; run them locally.
 
@@ -428,7 +492,9 @@ so CI does not run them; run them locally.
   names, so a clause word such as `order` or `limit` is a keyword only where
   its clause follows on the same line, and a name spelled like an operator
   (`if`, `in`, `desc`) is shown as the operator. Diagnostics are not affected.
-- No query execution, formatter, rename, references, connection testing or
-  database installation. No quick fix edits a Pietto file or applies a text
-  edit: **Select project root** changes only the `pietto.projectRoots`
-  setting, to the folder you pick.
+- No query execution, rename, references, signature help, connection
+  testing or database installation. Formatting and completion come from
+  `pietto lsp` (pietto 0.1.11 or later; see
+  [Editor features](#editor-features-pietto-0111)). No quick fix edits a
+  Pietto file or applies a text edit: **Select project root** changes only
+  the `pietto.projectRoots` setting, to the folder you pick.

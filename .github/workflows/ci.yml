@@ -12,6 +12,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # 0.1.10 is the minimum; 0.1.11 adds the editor features.
+        pietto: ['0.1.10', '0.1.11']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,10 +30,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: npm run lint
-      - name: Install pietto 0.1.10 from PyPI
+      - name: Install pietto ${{ matrix.pietto }} from PyPI
         run: |
           python -m venv "$RUNNER_TEMP/pietto"
-          "$RUNNER_TEMP/pietto/bin/python" -m pip install pietto==0.1.10
+          "$RUNNER_TEMP/pietto/bin/python" -m pip install "pietto==${{ matrix.pietto }}"
           echo "PIETTO_TEST_PYTHON=$RUNNER_TEMP/pietto/bin/python" >> "$GITHUB_ENV"
       # The host suites need a display, so they run locally only (README).
       - run: node --test out/tests/*.test.js

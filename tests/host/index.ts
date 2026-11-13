@@ -20,6 +20,7 @@ export async function run(): Promise<void> {
   const blocked = vscode.Uri.file(path.join(workspace, 'emit', 'models', 'blocked.pietto'));
   const legacy = vscode.Uri.file(path.join(workspace, 'loose', 'legacy.pietto'));
   const manual = vscode.Uri.file(path.join(workspace, 'loose', 'manual.pietto'));
+  const format = vscode.Uri.file(path.join(workspace, 'loose', 'format.pietto'));
   const extension = vscode.extensions.getExtension<Api>('MianliWang.pietto-vscode-extension');
   assert.ok(extension, 'The real editor host must discover the Pietto extension.');
   if (installedPath) assert.equal(path.resolve(extension.extensionPath), path.resolve(installedPath), 'The installed VSIX, not the source tree, is under test.');
@@ -45,6 +46,14 @@ export async function run(): Promise<void> {
       throw error;
     }
   };
+  // A step of an editor feature that the running server advertises, else a SKIP line:
+  // pietto 0.1.10 advertises diagnostics only, pietto 0.1.11 every feature below.
+  const stepIf = (capabilities: string[], name: string, action: () => Promise<unknown>) => {
+    const missing = capabilities.filter(capability => !api.client?.initializeResult?.capabilities?.[capability]);
+    if (!missing.length) return step(name, action);
+    console.log(`SKIP ${name}: the server does not advertise ${missing.join(', ')}`);
+    return Promise.resolve();
+  };
   if (!servers()) console.log('SKIP the process checks (one server, -I, a new pid after restart, none while off): they read /proc, which is Linux-only');
   const interpreter = () => vscode.workspace.getConfiguration('pietto');
   // Exactly one pietto lsp child of this extension host, started with -I.
@@ -66,6 +75,8 @@ export async function run(): Promise<void> {
 
   let error: vscode.Range | undefined;
   await step('project root: pietto lsp reports PIE-S2102 for an unknown field in an open module', async () => {
+    // The activation server must have read the empty roots, so that only the restart for this root can report PIE-S2102.
+    await waitFor('the activation client', () => api.client?.initializeResult);
     await vscode.commands.executeCommand('pietto.selectProject', vscode.Uri.file(project));
     assert.deepEqual(settings().get('projectRoots'), ['project']);
     const document = await vscode.workspace.openTextDocument(report);
@@ -93,7 +104,7 @@ export async function run(): Promise<void> {
     assert.equal(vscode.workspace.textDocuments.find(document => document.uri.toString() === report.toString())?.isDirty, true);
   });
 
-  await step('real LSP providers return hover, exact cross-module definitions and ordered document symbols', async () => {
+  await stepIf(['hoverProvider', 'definitionProvider', 'documentSymbolProvider'], 'real LSP providers return hover, exact cross-module definitions and ordered document symbols', async () => {
     const document = await vscode.workspace.openTextDocument(facts);
     await vscode.window.showTextDocument(document);
     const text = document.getText();
@@ -130,7 +141,7 @@ export async function run(): Promise<void> {
     return {hover: {text: hoverText.replaceAll('&nbsp;', ' '), range: span(hovers[0].range)}, targets, symbols: symbols.map(item => ({name: item.name, kind: item.kind, range: span(item.range)}))};
   });
 
-  await step('a document-symbol request sent right after an edit answers once with the edited outline', async () => {
+  await stepIf(['documentSymbolProvider'], 'a document-symbol request sent right after an edit answers once with the edited outline', async () => {
     const document = await vscode.workspace.openTextDocument(facts);
     await vscode.window.showTextDocument(document);
     const end = document.positionAt(document.getText().length);
@@ -150,6 +161,83 @@ export async function run(): Promise<void> {
     return {names: symbols.map(item => item.name)};
   });
 
+  // The workspace symbols for a query, as sorted "name file" lines: VS Code sorts them by name.
+  const workspaceSymbols = async (query: string) => ((await vscode.commands.executeCommand<vscode.SymbolInformation[]>('vscode.executeWorkspaceSymbolProvider', query)) ?? [])
+    .map(item => `${item.name} ${path.basename(item.location.uri.fsPath)}`).sort();
+  const links = async (uri: vscode.Uri) => ((await vscode.commands.executeCommand<vscode.DocumentLink[]>('vscode.executeLinkProvider', uri)) ?? [])
+    .map(link => ({range: span(link.range), target: link.target?.toString()}));
+
+  await stepIf(['workspaceSymbolProvider'], 'workspace symbols list the matching declarations of every module of the root, the unopened users.pietto too', async () => {
+    const expected = ['User users.pietto', 'audit_users facts.pietto', 'users users.pietto'];
+    return waitFor('the workspace symbols for "user"', async () => {
+      const names = await workspaceSymbols('user');
+      return names.join() === expected.join() && names;
+    });
+  });
+
+  await stepIf(['documentLinkProvider'], 'the import path of a project module links to the module it names', async () => {
+    const found = await waitFor('the import link of facts.pietto', async () => {
+      const items = await links(facts);
+      return items.length > 0 && items;
+    });
+    assert.deepEqual(found, [{range: [0, 5, 0, 26], target: users.toString()}]);
+    return found;
+  });
+
+  await stepIf(['completionProvider'], 'completion offers keywords, builtins and the names of the open file, not those of other files, and the snippets stay', async () => {
+    const document = await vscode.workspace.openTextDocument(facts);
+    await vscode.window.showTextDocument(document);
+    // The empty last line: no word is being typed there.
+    const list = await vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', facts, new vscode.Position(document.lineCount - 1, 0));
+    const kinds = (label: string) => list.items.filter(item => (typeof item.label === 'string' ? item.label : item.label.label) === label).map(item => item.kind ?? -1).sort((a, b) => a - b);
+    const {Keyword, Snippet, Class, Function, Text} = vscode.CompletionItemKind;
+    assert.deepEqual(kinds('select'), [Keyword]);
+    assert.deepEqual(kinds('shape'), [Keyword, Snippet], 'The keyword and the extension\'s snippet.');
+    assert.deepEqual(kinds('Int'), [Class]);
+    assert.deepEqual(kinds('coalesce'), [Function]);
+    assert.deepEqual(kinds('audit_users'), [Text], 'A name that the open file writes.');
+    assert.deepEqual(kinds('emails'), [], 'A name that only another open file writes.');
+    const snippets = list.items.filter(item => item.kind === Snippet).length;
+    return {items: list.items.length, snippets};
+  });
+
+  await stepIf(['documentFormattingProvider'], 'formatting edits the buffer to the pietto fmt layout; with [pietto] editor.formatOnSave a save writes it, and a syntax error saves as typed', async () => {
+    const document = await vscode.workspace.openTextDocument(format);
+    await vscode.window.showTextDocument(document);
+    const disk = readFileSync(format.fsPath, 'utf8');
+    const formatted = 'shape Item:\n    id: Int\n\nsource items: Item = postgres.table("public.items")\n';
+    const formatEdits = async () => (await vscode.commands.executeCommand<vscode.TextEdit[]>('vscode.executeFormatDocumentProvider', format, {tabSize: 2, insertSpaces: true})) ?? [];
+    const edits = await formatEdits();
+    // The server sends one edit of the whole buffer; VS Code narrows it to the changed lines.
+    assert.ok(edits.length > 0);
+    const edit = new vscode.WorkspaceEdit();
+    edit.set(format, edits);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    assert.equal(document.getText(), formatted);
+    assert.equal(readFileSync(format.fsPath, 'utf8'), disk, 'Formatting does not write the file.');
+    assert.deepEqual(await formatEdits(), [], 'A formatted buffer gets no edit.');
+    await vscode.commands.executeCommand('workbench.action.files.revert');
+    const editor = () => vscode.workspace.getConfiguration('editor', {languageId: 'pietto'});
+    await editor().update('formatOnSave', true, vscode.ConfigurationTarget.Workspace, true);
+    const append = async (text: string) => {
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(format, document.positionAt(document.getText().length), text);
+      assert.equal(await vscode.workspace.applyEdit(edit), true);
+      assert.equal(await document.save(), true);
+    };
+    await append('\n');
+    assert.equal(readFileSync(format.fsPath, 'utf8'), formatted);
+    const broken = `${formatted}\nquery broken:\n    from (\n`;
+    await append('\nquery broken:\n    from (\n');
+    assert.equal(readFileSync(format.fsPath, 'utf8'), broken, 'pietto fmt refuses a syntax error, so the save keeps the buffer.');
+    await editor().update('formatOnSave', undefined, vscode.ConfigurationTarget.Workspace, true);
+    const undo = new vscode.WorkspaceEdit();
+    undo.delete(format, new vscode.Range(document.positionAt(formatted.length), document.positionAt(broken.length)));
+    assert.equal(await vscode.workspace.applyEdit(undo), true);
+    assert.equal(await document.save(), true);
+    return {before: disk, formatted};
+  });
+
   await step('a pietto.toml edited on disk under the root restarts pietto lsp, which reads the new selection', async () => {
     const toml = path.join(project, 'pietto.toml');
     const original = readFileSync(toml, 'utf8');
@@ -158,16 +246,24 @@ export async function run(): Promise<void> {
     const typePosition = document.positionAt(document.getText().indexOf('owner: User') + 'owner: '.length);
     const definitions = async () => (await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeDefinitionProvider', facts, typePosition)) ?? [];
     const first = await oneServer();
+    const navigates = api.client?.initializeResult?.capabilities?.definitionProvider;
     writeFileSync(toml, original.replace('include = ["models/*.pietto"]', 'include = ["models/users.pietto"]'));
     await waitFor('report.pietto checked as a single file once the root leaves it out', () => codes(report).join() === 'PIE-S2301,PIE-S2708');
     const second = await oneServer();
     assert.ok(first.pid === -1 || second.pid !== first.pid, 'A new pietto lsp process read the edited pietto.toml.');
     writeFileSync(toml, original);
-    // A project-only fact, not an empty diagnostic set, shows that the restored root was read.
-    await waitFor('a cross-module definition from facts.pietto again', async () => {
-      const found = await definitions();
-      return found.length === 1 && found[0].uri.toString() === users.toString();
-    });
+    if (navigates) {
+      // A project-only fact, not an empty diagnostic set, shows that the restored root was read.
+      await waitFor('a cross-module definition from facts.pietto again', async () => {
+        const found = await definitions();
+        return found.length === 1 && found[0].uri.toString() === users.toString();
+      });
+    } else {
+      // Without definitions (pietto 0.1.10): a new process, then no diagnostics for a while.
+      await waitFor('another pietto lsp process', async () => { const found = await oneServer(); return (found.pid === -1 || found.pid !== second.pid) && api.client?.initializeResult; }, 60_000);
+      await waitFor('no diagnostics in report.pietto', () => pietto(report).length === 0);
+      await sleep(quietMs);
+    }
     assert.deepEqual(pietto(report), []);
     const third = await oneServer();
     assert.ok(third.pid === -1 || third.pid !== second.pid, 'Restoring pietto.toml started another pietto lsp process.');
@@ -222,6 +318,15 @@ export async function run(): Promise<void> {
     await waitFor('single-file diagnostics in report.pietto', () => codes(report).join() === 'PIE-S2301,PIE-S2708');
     await waitFor('no diagnostics left on the unopened module', () => pietto(users).length === 0);
     await oneServer();
+  });
+
+  await stepIf(['workspaceSymbolProvider'], 'in single file mode, workspace symbols list only open documents: not the unopened users.pietto', async () => {
+    // Of the open documents only format.pietto checks without errors on its own, so only it has facts.
+    const expected = ['Item format.pietto', 'items format.pietto'];
+    return waitFor('the workspace symbols of the open documents', async () => {
+      const names = await workspaceSymbols('');
+      return names.join() === expected.join() && names;
+    });
   });
 
   await step('an untitled Pietto buffer is checked as a single file', async () => {
