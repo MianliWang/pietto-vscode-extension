@@ -1,14 +1,24 @@
 # Changelog
 
-## 0.4.0 (candidate)
+## 0.4.0 (2026-11-13)
 
-- A compatible Pietto language server supplies standard hover, go to
-  definition and document symbols from its current diagnostic snapshot.
-  Definition covers only exact retained `type` and `from` targets; hover shows
-  retained declaration/type facts and symbols list named top-level
-  declarations. Unknown, ambiguous or stale facts produce no navigation
-  result. This does not restore the removed private Python adapter, completion
-  or the connection view.
+- With pietto 0.1.11, the editor gets the language server's hover, go to
+  definition, outline, **Go to Symbol in Workspace**, links on import paths,
+  **Format Document** and completion. The extension turns on each feature
+  that the server announces, without a version check, so pietto 0.1.10, which
+  announces diagnostics only, still works without them; 0.1.10 stays the
+  minimum. Hover and definition cover a shape field's type, a `type` alias's
+  base type and `from` references and, depending on single file or project
+  mode, some field and `let` reads and relationship calls (see the README).
+  Workspace symbols search the modules of the project roots and the open
+  files, and in single file mode only the open files. Import links appear only
+  in modules of a `schema_version = 2` project root. Completion lists the
+  keywords, the builtins and the names that the open file writes, and in
+  Pietto files it replaces VS Code's word-based suggestions; the snippets
+  stay. Format on save stays off by default; the README shows the `[pietto]`
+  setting that turns it on, and a file that `pietto fmt` refuses is then saved
+  as typed. This does not restore the removed private Python adapter or the
+  connection view.
 - The **Pietto Models** view returns, rebuilt on Pietto's public, alpha
   relation columns (`pietto explain --project --format json`,
   `pietto.project-relation-columns.v1`). Under each project root it lists

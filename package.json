@@ -2,7 +2,7 @@
   "name": "pietto-vscode-extension",
   "displayName": "Pietto",
   "description": "Pietto highlighting and snippets, with diagnostics from the pietto lsp language server; with pietto 0.1.11 also hover, definition, symbols, import links, formatting and completion.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "MianliWang",
   "license": "MIT",
   "icon": "images/icon.png",

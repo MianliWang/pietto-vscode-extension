@@ -37,7 +37,7 @@ py -3.12 -m venv $HOME\.venvs\pietto
 Install **Pietto** (`MianliWang.pietto-vscode-extension`) from the Visual
 Studio Marketplace. To run a local build instead, build the VSIX (see
 [Develop and verify](#develop-and-verify)) and install
-`artifacts/pietto-vscode-extension-0.3.0.vsix` with **Extensions: Install from
+`artifacts/pietto-vscode-extension-0.4.0.vsix` with **Extensions: Install from
 VSIX…**.
 
 ## Select the interpreter
@@ -469,7 +469,7 @@ The host tests download VS Code stable once into `.vscode-test/` (or use
 the extension against the real `pietto lsp`; on Linux they need a display
 (`DISPLAY`, WSLg or `xvfb-run`). Their process checks read `/proc`, so on
 other systems they print a `SKIP` line instead. `npm run package` writes
-`artifacts/pietto-vscode-extension-0.3.0.vsix`, and `npm run test:vsix` installs it into an
+`artifacts/pietto-vscode-extension-0.4.0.vsix`, and `npm run test:vsix` installs it into an
 isolated profile and runs the host tests against it. The host steps of the
 pietto 0.1.11 editor features run only when the server announces them: with
 pietto 0.1.10 they print a `SKIP` line instead. Press F5 for an isolated
